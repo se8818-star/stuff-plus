@@ -129,3 +129,15 @@ def test_grid_angles_ignore_actual_location():
 def test_zero_drag_does_not_blow_up(ay):
     t = physics._time_to_y(55.0, -130.0, ay, Y_PLATE)
     assert np.isfinite(t) and t == pytest.approx((55.0 - Y_PLATE) / 130.0)
+
+
+def test_plate_plane_by_season():
+    assert physics.plate_plane(2025) == Y_PLATE and physics.plate_plane(2026) == pytest.approx(8.5 / 12)
+    df = random_pitches(50)
+    c = {k: df[k].to_numpy() for k in df.columns if k != "p_throws"}
+    traj = [c[k] for k in ("vx0", "vy0", "vz0", "ax", "ay", "az")]
+    mid_x, mid_z = physics.fit_position_at(8.5 / 12, c["plate_x"], c["plate_z"], *traj)
+    x, z = physics.fit_position_at(60.5 - c["release_extension"], mid_x, mid_z, *traj,
+                                   y_plate=8.5 / 12)
+    np.testing.assert_allclose(x, c["release_pos_x"], atol=1e-8)
+    np.testing.assert_allclose(z, c["release_pos_z"], atol=1e-8)

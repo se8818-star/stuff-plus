@@ -54,7 +54,19 @@ def raw_duplicates(data_dir, year):
     return int(k.duplicated(KEY).sum())
 
 
-def physics_check(df):
+def estimate_plate_plane(c, traj):
+    """Distance from the plate tip (ft) at which plate_x/plate_z must be reported
+    for the fit, rewound to release_pos_y, to land on release_pos_z."""
+    grid = np.arange(-12, 61) / 24.0            # half-inch steps
+    idx = np.random.default_rng(0).choice(len(c["plate_x"]), min(50_000, len(c["plate_x"])), replace=False)
+    sub = [t[idx] for t in traj]
+    err = [np.nanmedian(np.abs(physics.fit_position_at(
+        c["release_pos_y"][idx], c["plate_x"][idx], c["plate_z"][idx], *sub, y_plate=y)[1]
+        - c["release_pos_z"][idx])) for y in grid]
+    return float(grid[int(np.argmin(err))])
+
+
+def physics_check(df, year=None):
     """Compare physics.py against Statcast's own fit on real pitches."""
     need = ["vx0", "vy0", "vz0", "ax", "ay", "az", "release_extension", "release_pos_x",
             "release_pos_y", "release_pos_z", "plate_x", "plate_z"]
@@ -62,6 +74,9 @@ def physics_check(df):
     c = {k: d[k].to_numpy(dtype=float) for k in need}
     traj = (c["vx0"], c["vy0"], c["vz0"], c["ax"], c["ay"], c["az"])
     out = {"n": len(d)}
+    y_plate = physics.plate_plane(year) if year else physics.Y_PLATE
+    out["plate_plane_estimated_in"] = estimate_plate_plane(c, traj) * 12
+    out["plate_plane_used_in"] = y_plate * 12
 
     def q(name, x):
         x = np.abs(x[np.isfinite(x)])
@@ -73,21 +88,25 @@ def physics_check(df):
     # 2. fit rewound from the plate crossing to the release plane vs release_pos_x/z
     for label, y_r in [("60.5 - extension", 60.5 - c["release_extension"]),
                        ("release_pos_y", c["release_pos_y"])]:
-        x, z = physics.fit_position_at(y_r, c["plate_x"], c["plate_z"], *traj)
+        x, z = physics.fit_position_at(y_r, c["plate_x"], c["plate_z"], *traj, y_plate=y_plate)
         q(f"fit x at {label} - release_pos_x [ft]", x - c["release_pos_x"])
         q(f"fit z at {label} - release_pos_z [ft]", z - c["release_pos_z"])
     # 3. re-aim at the pitch's own plate location vs its actual VAA/HAA
+    #    (target = where the fit crosses the front of the plate, which is where
+    #    the angles are defined, not necessarily where plate_x/z are reported)
     vaa0, haa0 = physics.actual_angles(*traj)
+    front_x, front_z = physics.fit_position_at(physics.Y_PLATE, c["plate_x"], c["plate_z"], *traj,
+                                               y_plate=y_plate)
     for label, kw in [("release_pos_x/z (as used for features)",
                        dict(release_x=c["release_pos_x"], release_z=c["release_pos_z"])),
                       ("fit-consistent release point", None)]:
         if kw is None:
             xr, zr = physics.fit_position_at(60.5 - c["release_extension"], c["plate_x"],
-                                             c["plate_z"], *traj)
+                                             c["plate_z"], *traj, y_plate=y_plate)
             kw = dict(release_x=xr, release_z=zr)
         x_r, z_r, y_r, vy_r = physics.release_state(*traj, c["release_extension"], **kw)
         vaa, haa = physics.angles_at_target(x_r, z_r, y_r, vy_r, c["ax"], c["ay"], c["az"],
-                                            c["plate_x"], c["plate_z"])
+                                            front_x, front_z)
         q(f"re-aimed VAA - actual VAA, {label} [deg]", vaa - vaa0)
         q(f"re-aimed HAA - actual HAA, {label} [deg]", haa - haa0)
     # 4. plausibility of the location-neutral features themselves
@@ -152,7 +171,7 @@ def main():
         nulls[y]["xwOBA (in play only)"] = float(
             df.loc[df["description"] == "hit_into_play", "estimated_woba_using_speedangle"].isna().mean() * 100)
         mix[y] = df["pitch_type"].fillna("(null)").value_counts(normalize=True) * 100
-        phys[y] = physics_check(df)
+        phys[y] = physics_check(df, y)
         print(f"{y}: {len(df):,} pitches")
 
     seasons_df = pd.DataFrame(seasons)
@@ -168,6 +187,9 @@ def main():
         for stat in ("median", "p99"):
             phys_rows[f"{n} — {stat}"] = {y: phys[y][n][stat] for y in args.years}
     phys_df = pd.DataFrame(phys_rows).T
+    plane_df = pd.DataFrame({y: {
+        "plate_x/plate_z plane that matches the fit [in from plate tip]": phys[y]["plate_plane_estimated_in"],
+        "plane used for the checks below [in]": phys[y]["plate_plane_used_in"]} for y in args.years})
     impl_df = pd.DataFrame({y: {**phys[y]["implausible_rows"],
                                 "non-finite grid angles": phys[y]["grid_nonfinite_rows"],
                                 "rows checked": phys[y]["n"]} for y in args.years})
@@ -187,6 +209,8 @@ def main():
           "## Null rate (%) per input per season", "", md_table(nulls_df, "{:.2f}"), "",
           "## Pitch-type mix (%) by season", "", md_table(mix_df, "{:.2f}"), "",
           "## Physics check on real rows", "",
+          "Where `plate_x`/`plate_z` are reported (17 in = front of plate, 8.5 in = middle):", "",
+          md_table(plane_df, "{:.1f}"), "",
           "Absolute differences between `physics.py` and Statcast's own columns.", "",
           md_table(phys_df, "{:.4f}"), "", md_table(sane_df), "",
           "Rows failing plausibility bounds:", "", md_table(impl_df), ""]
