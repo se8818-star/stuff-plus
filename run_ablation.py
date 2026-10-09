@@ -17,6 +17,8 @@ Usage
 """
 import argparse
 import json
+import platform
+import sys
 import time
 from pathlib import Path
 
@@ -28,6 +30,18 @@ from features import VARIANTS, GRID, add_features, load
 HERE = Path(__file__).parent
 
 
+def env_info():
+    """Library versions, logged with every results JSON."""
+    from importlib import metadata
+    out = {"python": platform.python_version(), "platform": platform.platform()}
+    for pkg in ("numpy", "pandas", "scikit-learn", "lightgbm", "pyarrow", "pybaseball", "optuna"):
+        try:
+            out[pkg] = metadata.version(pkg)
+        except metadata.PackageNotFoundError:
+            out[pkg] = None
+    return out
+
+
 def make_model(seed):
     """LightGBM with tjStuff+ v3.0 hyperparameters if installed, otherwise
     sklearn's histogram GBM (same algorithm family) with matched settings."""
@@ -36,7 +50,8 @@ def make_model(seed):
         return LGBMRegressor(n_estimators=1000, learning_rate=0.01, num_leaves=31,
                              max_depth=-1, min_child_samples=20, subsample=0.8,
                              colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=0.2,
-                             random_state=seed, force_row_wise=True, verbose=-1)
+                             random_state=seed, force_row_wise=True, deterministic=True,
+                             verbose=-1)
     except ImportError:
         from sklearn.ensemble import HistGradientBoostingRegressor
         return HistGradientBoostingRegressor(max_iter=1000, learning_rate=0.01,
@@ -72,9 +87,9 @@ def evaluate(train, ev, nxt, feats, seeds):
     tr = train.dropna(subset=feats + ["target"])
     p_ev = np.zeros(len(ev)); p_nx = np.zeros(len(nxt))
     for sd in seeds:
-        m = make_model(sd).fit(tr[feats].to_numpy(), tr["target"].to_numpy())
-        p_ev += m.predict(ev[feats].to_numpy()) / len(seeds)
-        p_nx += m.predict(nxt[feats].to_numpy()) / len(seeds)
+        m = make_model(sd).fit(tr[feats], tr["target"].to_numpy())
+        p_ev += m.predict(ev[feats]) / len(seeds)
+        p_nx += m.predict(nxt[feats]) / len(seeds)
     mu, sdv = p_ev.mean(), p_ev.std()
     a = pitcher_stuff(ev, p_ev, mu, sdv)
     b = pitcher_stuff(nxt, p_nx, mu, sdv)
@@ -113,7 +128,8 @@ def bootstrap_diff(j_base, j_var, n=1000, seed=0):
 
 def redundancy_report(df):
     """How many independent dimensions do the 18 grid angles really have?"""
-    X = df[GRID].dropna().sample(min(200_000, len(df)), random_state=0).to_numpy()
+    X = df[GRID].dropna()
+    X = X.sample(min(200_000, len(X)), random_state=0).to_numpy()
     X = (X - X.mean(0)) / X.std(0)
     ev = np.linalg.svd(X, full_matrices=False, compute_uv=False) ** 2
     ev = ev / ev.sum()
@@ -139,6 +155,7 @@ def main():
     else:
         df = load(HERE / "data", years)
     print(f"loaded {len(df):,} pitches in {time.time()-t0:.0f}s")
+    print("env: " + ", ".join(f"{k} {v}" for k, v in env_info().items() if v))
 
     cum = redundancy_report(df)
     print("\n18 grid angles -> cumulative variance by principal component:")
@@ -187,7 +204,9 @@ def main():
     (HERE / "results").mkdir(exist_ok=True)
     tag = "synthetic" if args.synthetic else f"{args.eval}"
     with open(HERE / "results" / f"ablation_{tag}.json", "w") as f:
-        json.dump({"grid_pca_cumvar": cum.tolist(), "results": results}, f, indent=2, default=float)
+        json.dump({"args": vars(args), "seeds": seeds, "env": env_info(),
+                   "grid_pca_cumvar": cum.tolist(), "results": results},
+                  f, indent=2, default=float)
     print(f"\nsaved results/ablation_{tag}.json  (total {time.time()-t0:.0f}s)")
 
 

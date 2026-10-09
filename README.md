@@ -12,7 +12,9 @@ tjStuff+ v3.0's feature set, using his validation design on 2022–2026 data
 ## Run it
 
 ```bash
-pip install pandas numpy scikit-learn pyarrow pybaseball lightgbm
+bash setup.sh                 # .venv + pinned requirements.txt + synthetic smoke test
+source .venv/bin/activate
+pytest -q                     # physics, target mapping, feature engineering
 python fetch_data.py          # 2022-2026 Statcast, cached to data/ (slow, once)
 python run_ablation.py        # all variants, ~a few minutes each with LightGBM
 python run_ablation.py --seeds 3   # average 3 model seeds (recommended for final numbers)
@@ -21,7 +23,11 @@ python run_ablation.py --synthetic # smoke test, no data needed
 ```
 
 If LightGBM isn't installed it falls back to sklearn's histogram GBM with
-matched settings. Results land in `results/ablation_<eval year>.json`.
+matched settings. Results land in `results/ablation_<eval year>.json`, together
+with the CLI arguments, model seeds, and library versions used for the run.
+Versions are pinned for Python 3.9; on Apple Silicon LightGBM needs
+`brew install libomp` (`setup.sh` does this). CI runs only `pytest` and the
+synthetic smoke test — it never downloads data.
 
 ## How the 9-point angles work (`physics.py`)
 
@@ -64,6 +70,11 @@ exactly, so the physics is checked against Statcast's own fit.
 - Target: same count-specific run-value table (`run_values.csv`, from his repo).
 - Release x/z use Statcast `release_pos_*`; his notebook uses MLB API `x0/z0`.
 - RobustScaler is omitted (no effect on tree models).
+- Outcomes his `event_dict` maps to None (`field_error`, `strikeout_double_play`,
+  `catcher_interf`, ...) have no target and are dropped, as in his notebook.
+- His notebook inner-joins the primary-fastball table, which drops pitcher-seasons
+  with no FF/SI/FC (the fallback code after it never runs). Here those rows are
+  kept, referenced to the pitcher's hardest pitch type, and flagged `fb_fallback`.
 - His notebook passes `subsample=0.8` without `subsample_freq`, so LightGBM
   doesn't actually bag rows; kept as-is for a faithful baseline.
 

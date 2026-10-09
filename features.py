@@ -67,16 +67,19 @@ VARIANTS = {
 
 def add_target(df: pd.DataFrame) -> pd.DataFrame:
     """Count-specific run value per pitch, TJ-style: terminal events use the
-    event's value in that count, otherwise the pitch description's value."""
-    rv = pd.read_csv(HERE / "run_values.csv")
-    lut = {(e, b, s): v for e, b, s, v in rv.itertuples(index=False)}
-    evt = df["events"].map(EVT)
-    des = df["description"].map(DES)
-    b, s = df["balls"].to_numpy(), df["strikes"].to_numpy()
-    v_evt = [lut.get((e, bb, ss), np.nan) if isinstance(e, str) else np.nan
-             for e, bb, ss in zip(evt, b, s)]
-    v_des = [lut.get((d, bb, ss), np.nan) if isinstance(d, str) else np.nan
-             for d, bb, ss in zip(des, b, s)]
+    event's value in that count, otherwise the pitch description's value.
+    Outcomes TJ leaves unmapped (field_error, strikeout_double_play, ...) get
+    NaN and are dropped at train/score time, as in his notebook."""
+    rv = pd.read_csv(HERE / "run_values.csv").astype({"balls": float, "strikes": float})
+    count = {c: pd.to_numeric(df[c], errors="coerce").to_numpy(dtype=float)
+             for c in ("balls", "strikes")}
+
+    def lookup(outcome):
+        key = pd.DataFrame({"event": outcome.to_numpy(dtype=object), **count})
+        return key.merge(rv, how="left", on=["event", "balls", "strikes"])["delta_run_exp"].to_numpy()
+
+    v_evt = lookup(df["events"].map(EVT))
+    v_des = lookup(df["description"].map(DES))
     df["target"] = np.where(np.isnan(v_evt), v_des, v_evt)
     return df
 
@@ -104,23 +107,22 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     for c in GRID + CENTER:
         df[c] = raw[c].to_numpy()
 
-    # Primary fastball per pitcher-season (most-used of FF/SI/FC)
-    fb = df[df["pitch_type"].isin(FASTBALLS)]
-    agg = (fb.groupby(["pitcher", "year", "pitch_type"])
-             .agg(fb_speed=("start_speed", "mean"), fb_az=("az", "mean"),
-                  fb_ax=("ax", "mean"), fb_vaa=("vaa_ln", "mean"),
-                  fb_haa=("haa_ln", "mean"), n=("start_speed", "size"))
-             .reset_index()
-             .sort_values(["n", "fb_speed"], ascending=False)
-             .drop_duplicates(["pitcher", "year"]))
-    df = df.merge(agg.drop(columns=["pitch_type", "n"]), on=["pitcher", "year"], how="left")
-
-    # No fastball: fall back to the pitcher-season's hardest pitch
-    hardest = df.groupby(["pitcher", "year"])["start_speed"].transform("idxmax")
-    for col, src in [("fb_speed", "start_speed"), ("fb_az", "az"), ("fb_ax", "ax"),
-                     ("fb_vaa", "vaa_ln"), ("fb_haa", "haa_ln")]:
-        fallback = df[src].reindex(hardest.fillna(-1).astype(int)).to_numpy()
-        df[col] = df[col].fillna(pd.Series(fallback, index=df.index))
+    # Primary fastball per pitcher-season (most-used of FF/SI/FC). Pitcher-seasons
+    # with no fastball fall back to their hardest pitch type by mean velocity
+    # (TJ's notebook inner-joins here, which silently drops them; fb_fallback
+    # flags those rows so they can be excluded for a like-for-like comparison).
+    by_type = (df.groupby(["pitcher", "year", "pitch_type"])
+                 .agg(fb_speed=("start_speed", "mean"), fb_az=("az", "mean"),
+                      fb_ax=("ax", "mean"), fb_vaa=("vaa_ln", "mean"),
+                      fb_haa=("haa_ln", "mean"), n=("start_speed", "size"))
+                 .reset_index())
+    is_fb = by_type["pitch_type"].isin(FASTBALLS)
+    primary = by_type[is_fb].sort_values(["n", "fb_speed"], ascending=False, kind="stable")
+    hardest = by_type[~is_fb].sort_values("fb_speed", ascending=False, kind="stable")
+    ref = (pd.concat([primary.assign(fb_fallback=False), hardest.assign(fb_fallback=True)])
+             .drop_duplicates(["pitcher", "year"])
+             .drop(columns=["pitch_type", "n"]))
+    df = df.merge(ref, on=["pitcher", "year"], how="left")
 
     df["speed_diff"] = df["start_speed"] - df["fb_speed"]
     df["az_diff"] = df["az"] - df["fb_az"]
@@ -133,6 +135,7 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
 def load(data_dir: Path, years) -> pd.DataFrame:
     frames = [pd.read_parquet(data_dir / f"statcast_{y}.parquet") for y in years]
     df = pd.concat(frames, ignore_index=True)
-    df = df[df["pitch_type"].notna() & ~df["pitch_type"].isin(["PO", "IN", "EP", "KN", "FA", "CS", "SC"])]
+    df = df[df["pitch_type"].notna()
+            & ~df["pitch_type"].isin(["PO", "IN", "EP", "KN", "FA", "CS", "SC"])].copy()
     df = add_target(df)
     return add_features(df)
