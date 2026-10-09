@@ -132,9 +132,24 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def plain_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """pybaseball returns pandas nullable dtypes (Int64/Float64 with pd.NA), which
+    turn into object arrays under .to_numpy(). Convert to plain numpy dtypes:
+    floats (and ints with missing values) -> float64 with NaN."""
+    df = df.copy()
+    for c in df.columns:
+        dt = df[c].dtype
+        if pd.api.types.is_extension_array_dtype(dt) and pd.api.types.is_numeric_dtype(dt):
+            if pd.api.types.is_integer_dtype(dt) and not df[c].isna().any():
+                df[c] = df[c].astype("int64")
+            else:
+                df[c] = df[c].astype("float64")
+    return df
+
+
 def load(data_dir: Path, years) -> pd.DataFrame:
     frames = [pd.read_parquet(data_dir / f"statcast_{y}.parquet") for y in years]
-    df = pd.concat(frames, ignore_index=True)
+    df = plain_dtypes(pd.concat(frames, ignore_index=True))
     df = df[df["pitch_type"].notna()
             & ~df["pitch_type"].isin(["PO", "IN", "EP", "KN", "FA", "CS", "SC"])].copy()
     df = add_target(df)

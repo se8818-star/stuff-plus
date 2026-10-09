@@ -158,3 +158,22 @@ def test_fastball_reference_is_per_season(fixture):
     _, df = fixture
     per = df.groupby(["pitcher", "year"])["fb_speed"].first().unstack()
     assert (per[2023] != per[2024]).all()
+
+
+def test_plain_dtypes_removes_pandas_nullable_types():
+    df = pd.DataFrame({"a": pd.array([1.5, None], dtype="Float64"),
+                       "b": pd.array([1, None], dtype="Int64"),
+                       "c": pd.array([1, 2], dtype="Int64"), "d": ["x", None]})
+    out = features.plain_dtypes(df)
+    assert [str(t) for t in out.dtypes] == ["float64", "float64", "int64", "object"]
+    assert np.isnan(out["a"].to_numpy()[1]) and np.isnan(out["b"].to_numpy()[1])
+    assert str(df["a"].dtype) == "Float64"           # input untouched
+
+
+def test_features_accept_statcast_nullable_dtypes(fixture):
+    raw, df = fixture
+    nullable = raw.convert_dtypes()
+    assert "Float64" in {str(t) for t in nullable.dtypes}
+    feats = sorted({f for v in VARIANTS.values() for f in v})
+    got = add_features(features.plain_dtypes(nullable))
+    pd.testing.assert_frame_equal(got[feats], df[feats], check_dtype=False)

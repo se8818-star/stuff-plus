@@ -90,6 +90,16 @@ def actual_angles(vx0, vy0, vz0, ax, ay, az):
     return -np.degrees(np.arctan(vz / vy)), -np.degrees(np.arctan(vx / vy))
 
 
+def fit_position_at(y, plate_x, plate_z, vx0, vy0, vz0, ax, ay, az):
+    """(x, z) of the fitted trajectory at distance y, anchored on the measured
+    plate crossing. Statcast doesn't publish the fit's x/z at y=50, so this is
+    how the fit is compared against release_pos_x / release_pos_z."""
+    t_p = _time_to_y(Y50, vy0, ay, Y_PLATE)
+    vx_p, vy_p, vz_p = vx0 + ax * t_p, vy0 + ay * t_p, vz0 + az * t_p
+    t = _time_to_y(Y_PLATE, vy_p, ay, y)                 # negative: back toward the mound
+    return plate_x + vx_p * t + 0.5 * ax * t ** 2, plate_z + vz_p * t + 0.5 * az * t ** 2
+
+
 def grid_angles(df, mirror_col="p_throws"):
     """Add 9 VAA + 9 HAA columns (vaa_<row>_<col>, haa_<row>_<col>) plus
     vaa_ln / haa_ln (center-of-zone, location-neutral) to a pandas DataFrame

@@ -70,6 +70,15 @@ def test_rewind_recovers_release_velocity():
     np.testing.assert_allclose(y_r, 60.5 - df["release_extension"])
 
 
+def test_fit_position_recovers_release_point_from_plate():
+    df = random_pitches()
+    c = {k: df[k].to_numpy() for k in df.columns if k != "p_throws"}
+    x, z = physics.fit_position_at(60.5 - c["release_extension"], c["plate_x"], c["plate_z"],
+                                   c["vx0"], c["vy0"], c["vz0"], c["ax"], c["ay"], c["az"])
+    np.testing.assert_allclose(x, c["release_pos_x"], atol=1e-8)
+    np.testing.assert_allclose(z, c["release_pos_z"], atol=1e-8)
+
+
 def test_left_and_right_handers_mirror():
     rhp = random_pitches()
     lhp = rhp.copy()
