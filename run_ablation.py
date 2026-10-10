@@ -272,12 +272,17 @@ def run_fold(df, fold, train_years, ev_year, variants, seeds, min_n):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variants", nargs="*", default=list(VARIANTS))
-    ap.add_argument("--folds", nargs="*", type=int, default=list(FOLDS), choices=list(FOLDS))
+    ap.add_argument("--folds", nargs="*", type=int, default=[1], choices=list(FOLDS))
+    ap.add_argument("--unlock-fold2", action="store_true",
+                    help="fold 2 is the one-shot confirmation test (see PREREGISTRATION.md)")
     ap.add_argument("--min-pitches", type=int, default=100)
     ap.add_argument("--seeds", type=int, default=1, help="average N model seeds")
     ap.add_argument("--boot", type=int, default=1000)
     ap.add_argument("--synthetic", action="store_true")
     args = ap.parse_args()
+
+    if 2 in args.folds and not (args.synthetic or args.unlock_fold2):
+        sys.exit("Fold 2 is locked until the final candidate is frozen (PREREGISTRATION.md).")
 
     t0 = time.time()
     years = sorted({y for f in args.folds for y in FOLDS[f]["train"] + [FOLDS[f]["eval"], FOLDS[f]["eval"] + 1]})
