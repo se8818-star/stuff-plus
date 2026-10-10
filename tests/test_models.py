@@ -100,3 +100,24 @@ def test_split_half_k_recovers_a_known_constant():
     d["game_date"] = pd.Timestamp("2022-04-01") + pd.to_timedelta(d["game_pk"], unit="D")
     out = develop.split_half_k(d, d["s"].to_numpy(), ["pitcher", "year"], 100)
     assert out["k"] == pytest.approx(16, rel=0.25) and 0 < out["r_half"] < 1 and out["groups"] == 600
+
+
+def test_tuned_component_models_get_their_own_tree_counts():
+    p = models._params({"n_estimators_by_component": {"swing": 7, "cs": 9}, "num_leaves": 15}, 1, "cs")
+    assert p["n_estimators"] == 9 and p["num_leaves"] == 15 and p["random_state"] == 1
+    assert "n_estimators_by_component" not in p
+    assert models._params(None, 0)["n_estimators"] == 1000
+
+
+def test_tuning_search_space_is_regularizing_only(data):
+    import optuna
+    import tune
+    assert (tune.N_TRIALS, tune.N_FOLDS, tune.PATIENCE, tune.MAX_TREES) == (30, 3, 50, 3000)
+    trial = optuna.create_study(sampler=optuna.samplers.TPESampler(seed=0)).ask()
+    assert set(tune.suggest(trial)) == {"min_child_samples", "num_leaves", "reg_lambda", "learning_rate"}
+    spec = models.CANDIDATES["A"]
+    (name, rows, label, clf), = tune.tasks_for(spec, data)
+    loss, trees = tune.cv_loss(rows, spec["features"], label, clf,
+                               {"n_estimators": 40, "learning_rate": 0.1}, early_stopping=True)
+    assert loss > 0 and 1 <= trees <= 40
+    assert [t[0] for t in tune.tasks_for(models.CANDIDATES["COMP"], data)] == ["swing", "whiff", "cs", "contact"]

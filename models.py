@@ -44,8 +44,14 @@ def add_outcome_flags(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _params(params, seed):
-    return {**TJ_PARAMS, **(params or {}), "random_state": seed}
+def _params(params, seed, component=None):
+    """TJ's settings with any overrides. Tuned component models carry one tree
+    count per component in `n_estimators_by_component`."""
+    p = {**TJ_PARAMS, **(params or {}), "random_state": seed}
+    by_component = p.pop("n_estimators_by_component", None)
+    if by_component and component:
+        p["n_estimators"] = by_component[component]
+    return p
 
 
 def _fit_direct(spec, train, frames, seeds, params):
@@ -89,7 +95,7 @@ def _fit_component(spec, train, frames, seeds, params):
     parts = {name: [np.zeros(len(f)) for f in frames] for name in ("swing", "whiff", "cs", "contact")}
     for name, rows, label, clf in component_tasks(tr):
         for sd in seeds:
-            m = (LGBMClassifier if clf else LGBMRegressor)(**_params(params, sd))
+            m = (LGBMClassifier if clf else LGBMRegressor)(**_params(params, sd, name))
             m.fit(rows[feats], rows[label].to_numpy())
             for p, f in zip(parts[name], frames):
                 p += (m.predict_proba(f[feats])[:, 1] if clf else m.predict(f[feats])) / len(seeds)
