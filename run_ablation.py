@@ -1,18 +1,21 @@
 """
-Head-to-head ablation of Stuff+ feature sets on tjStuff+ v3.0's validation design.
+Head-to-head ablation of Stuff+ feature sets on tjStuff+ v3.0's validation
+design, with rolling-origin folds:
 
-  Default fold: train 2022-23  ->  score 2024, validate against 2025
-  Second fold:  --train 2022 2023 2024 --eval 2025  (validates against 2026)
-  Stuff+ = 100 - 10 * z(xRV), scaled with the eval-season pitch-level mean/sd
+  fold 1: train 2022-23     ->  score 2024, validate against 2025
+  fold 2: train 2022-24     ->  score 2025, validate against 2026
+
+  Stuff+ = 100 - 10 * z(xRV), scaled with the scored season's pitch-level mean/sd
   Pitcher-season mean Stuff+ (min 100 pitches in both years), then:
     stickiness      r(Stuff+ year N, Stuff+ year N+1)
     predictiveness  r(Stuff+ year N, year N+1 wOBA / K-BB% / RV per 100)
-  Paired bootstrap over pitchers gives a 95% CI on each variant minus A.
+  Paired bootstrap over pitchers gives a 95% CI on each variant minus A, per
+  fold and for the mean of the folds (pitchers resampled jointly across folds).
 
 Usage
   python fetch_data.py                     # once, downloads 2022-2026
-  python run_ablation.py                   # all variants
-  python run_ablation.py --variants A_tj_v3 D_grid9_angles_only --seeds 3
+  python run_ablation.py --seeds 3         # all variants, both folds
+  python run_ablation.py --folds 1 --variants A_tj_v3 D_grid9_angles_only
   python run_ablation.py --synthetic       # smoke test without data
 """
 import argparse
@@ -25,9 +28,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from features import VARIANTS, GRID, add_features, load
+from features import SPECS, VARIANTS, GRID, add_expected_target, add_features, load
 
 HERE = Path(__file__).parent
+BASE = "A_tj_v3"
+FOLDS = {1: {"train": [2022, 2023], "eval": 2024},
+         2: {"train": [2022, 2023, 2024], "eval": 2025}}
+PITCH_TYPES = ["FF", "SI", "FC", "SL", "ST", "CU", "KC", "CH", "FS"]
+KEYS = ["stickiness", "next_woba", "next_k_bb", "next_rv100"]
 
 
 def env_info():
@@ -83,11 +91,21 @@ def pitcher_stuff(df, pred, mu, sd):
              .groupby("pitcher")["s"].agg(["mean", "size"])
 
 
-def evaluate(train, ev, nxt, feats, seeds):
-    tr = train.dropna(subset=feats + ["target"])
+def season_weights(years, recency):
+    """Weight of a training pitch = recency ** (seasons before the latest one)."""
+    years = np.asarray(years)
+    return np.power(float(recency), years.max() - years)
+
+
+def evaluate(train, ev, nxt, feats, seeds, target="target", recency=None):
+    """Fit on `train`, predict xRV for the scored season and the one after.
+    Returns pitcher tables for both, pitch-level R^2 on next season's actual
+    run values, the last fitted model, and the two pitch-level predictions."""
+    tr = train.dropna(subset=feats + [target])
+    w = season_weights(tr["year"], recency) if recency else None
     p_ev = np.zeros(len(ev)); p_nx = np.zeros(len(nxt))
     for sd in seeds:
-        m = make_model(sd).fit(tr[feats], tr["target"].to_numpy())
+        m = make_model(sd).fit(tr[feats], tr[target].to_numpy(), sample_weight=w)
         p_ev += m.predict(ev[feats]) / len(seeds)
         p_nx += m.predict(nxt[feats]) / len(seeds)
     mu, sdv = p_ev.mean(), p_ev.std()
@@ -96,13 +114,13 @@ def evaluate(train, ev, nxt, feats, seeds):
     # pitch-level out-of-sample R^2 on the next season (tiny but comparable)
     y = nxt["target"].to_numpy()
     r2 = 1 - ((y - p_nx) ** 2).sum() / ((y - y.mean()) ** 2).sum()
-    return a, b, r2, m
+    return a, b, r2, m, (100 - 10 * (p_ev - mu) / sdv, 100 - 10 * (p_nx - mu) / sdv)
 
 
 def corr_table(a, b, out_nx, min_n):
     j = a.join(b, lsuffix="_y1", rsuffix="_y2", how="inner").join(out_nx, how="inner")
     j = j[(j["size_y1"] >= min_n) & (j["size_y2"] >= min_n)]
-    return j
+    return j.dropna(subset=["woba", "k_bb", "rv100"])
 
 
 def metrics(j):
@@ -114,33 +132,147 @@ def metrics(j):
     }
 
 
-def bootstrap_diff(j_base, j_var, n=1000, seed=0):
-    ids = j_base.index.intersection(j_var.index).to_numpy()
+def pitch_type_stickiness(ev, nxt, s_ev, s_nx, min_n):
+    """r(Stuff+ year N, year N+1) per pitcher x pitch type, min_n of that type
+    in both seasons."""
+    def agg(df, s):
+        return (pd.DataFrame({"pitcher": df["pitcher"].to_numpy(),
+                              "pitch_type": df["pitch_type"].to_numpy(), "s": s})
+                  .groupby(["pitcher", "pitch_type"])["s"].agg(["mean", "size"]))
+    j = agg(ev, s_ev).join(agg(nxt, s_nx), lsuffix="_y1", rsuffix="_y2", how="inner")
+    j = j[(j["size_y1"] >= min_n) & (j["size_y2"] >= min_n)].reset_index()
+    out = {}
+    for pt in PITCH_TYPES:
+        g = j[j["pitch_type"] == pt]
+        out[pt] = {"r": g["mean_y1"].corr(g["mean_y2"]) if len(g) > 2 else np.nan, "n": len(g)}
+    return out
+
+
+# ------------------------------------------------------------------ bootstrap
+def _arrays(j):
+    return [j[c].to_numpy(dtype=float) for c in ("mean_y1", "mean_y2", "woba", "k_bb", "rv100")]
+
+
+def _corr(x, y):
+    x = x - x.mean(); y = y - y.mean()
+    d = np.sqrt((x * x).sum() * (y * y).sum())
+    return (x * y).sum() / d if d > 0 else np.nan
+
+
+def _metric_vec(arr, idx):
+    y1 = arr[0][idx]
+    return np.array([_corr(y1, arr[1][idx]), -_corr(y1, arr[2][idx]),
+                     _corr(y1, arr[3][idx]), -_corr(y1, arr[4][idx])])
+
+
+def bootstrap_folds(base_tables, var_tables, n=1000, seed=0):
+    """Paired bootstrap of (variant - base) for each metric, per fold and for
+    the mean of the folds. Pitchers are the resampling unit and are drawn once
+    per replicate across all folds, so a pitcher who appears in both folds is
+    in or out of both. Returns point differences (on the pitchers common to
+    variant and base) and 95% percentile intervals."""
+    folds, ids_all = [], []
+    for jb, jv in zip(base_tables, var_tables):
+        ids = jb.index.intersection(jv.index)
+        folds.append((ids, _arrays(jb.loc[ids]), _arrays(jv.loc[ids])))
+        ids_all.append(ids.to_numpy())
+    union = np.unique(np.concatenate(ids_all))
+    pos = [ids.get_indexer(union) for ids, _, _ in folds]
+    point = np.array([_metric_vec(av, np.arange(len(ids))) - _metric_vec(ab, np.arange(len(ids)))
+                      for ids, ab, av in folds])
     rng = np.random.default_rng(seed)
-    out = {k: [] for k in metrics(j_base)}
-    for _ in range(n):
-        s = rng.choice(ids, len(ids), replace=True)
-        mb, mv = metrics(j_base.loc[s]), metrics(j_var.loc[s])
-        for k in out:
-            out[k].append(mv[k] - mb[k])
-    return {k: (np.percentile(v, 2.5), np.percentile(v, 97.5)) for k, v in out.items()}
+    reps = np.empty((n, len(folds), len(KEYS)))
+    for r in range(n):
+        draw = rng.integers(0, len(union), len(union))
+        for f, (_, ab, av) in enumerate(folds):
+            p = pos[f][draw]
+            p = p[p >= 0]
+            reps[r, f] = _metric_vec(av, p) - _metric_vec(ab, p)
+
+    def ci(x):
+        lo, hi = np.nanpercentile(x, [2.5, 97.5], axis=0)
+        return {k: (float(lo[i]), float(hi[i])) for i, k in enumerate(KEYS)}
+
+    return {"diff": [dict(zip(KEYS, map(float, p))) for p in point],
+            "ci": [ci(reps[:, f]) for f in range(len(folds))],
+            "mean_diff": dict(zip(KEYS, map(float, point.mean(0)))),
+            "mean_ci": ci(reps.mean(1))}
 
 
+def bootstrap_diff(j_base, j_var, n=1000, seed=0):
+    """Single-fold paired bootstrap: {metric: (lo, hi)} for variant - base."""
+    return bootstrap_folds([j_base], [j_var], n=n, seed=seed)["ci"][0]
+
+
+# ------------------------------------------------------------------- grid PCA
 def redundancy_report(df):
-    """How many independent dimensions do the 18 grid angles really have?"""
-    X = df[GRID].dropna()
-    X = X.sample(min(200_000, len(X)), random_state=0).to_numpy()
-    X = (X - X.mean(0)) / X.std(0)
-    ev = np.linalg.svd(X, full_matrices=False, compute_uv=False) ** 2
-    ev = ev / ev.sum()
-    return np.cumsum(ev)
+    """How many independent dimensions do the 18 grid angles really have?
+    Returns the cumulative variance by principal component (standardized) and,
+    for a direct reading in degrees, how much of each grid angle is left after
+    a linear fit on the two centre-of-zone angles."""
+    cols = GRID + ["release_extension"] if "release_extension" in df else GRID
+    X = df[cols].dropna()
+    X = X.sample(min(200_000, len(X)), random_state=0)
+    G = X[GRID].to_numpy()
+    Z = (G - G.mean(0)) / G.std(0)
+    ev = np.linalg.svd(Z, full_matrices=False, compute_uv=False) ** 2
+    cum = np.cumsum(ev / ev.sum())
+
+    def resid_sd(extra):
+        A = np.column_stack([X["vaa_mid_mid"], X["haa_mid_mid"], np.ones(len(X))] + extra)
+        res = G - A @ np.linalg.lstsq(A, G, rcond=None)[0]
+        return res.std(0)
+
+    r2 = resid_sd([])
+    detail = {
+        "n": len(X),
+        "grid_angle_sd_deg": [float(G.std(0).min()), float(G.std(0).max())],
+        "max_resid_sd_deg_after_center_pair": float(r2.max()),
+        "min_r2_after_center_pair": float((1 - (r2 / G.std(0)) ** 2).min()),
+    }
+    if "release_extension" in X:
+        detail["max_resid_sd_deg_after_center_pair_plus_extension"] = float(
+            resid_sd([X["release_extension"]]).max())
+    return cum, detail
+
+
+# ----------------------------------------------------------------------- main
+def run_fold(df, fold, train_years, ev_year, variants, seeds, min_n):
+    train = df[df["year"].isin(train_years)]
+    ev = df[df["year"] == ev_year].dropna(subset=["target"])
+    nxt = df[df["year"] == ev_year + 1].dropna(subset=["target"])
+    out_nx = outcomes(nxt)
+    results, tables = {}, {}
+    print(f"\n=== fold {fold}: train {train_years} -> score {ev_year}, validate {ev_year + 1} ===")
+    for name in variants:
+        feats, spec = VARIANTS[name], SPECS.get(name, {})
+        need = feats + [spec.get("target", "target")]
+        missing = [f for f in need if f not in df or df[f].isna().all()]
+        if missing:
+            print(f"\n{name}: skipped (missing column: {missing})")
+            continue
+        ev_v, nx_v = ev.dropna(subset=feats), nxt.dropna(subset=feats)
+        t1 = time.time()
+        a, b, r2, model, (s_ev, s_nx) = evaluate(train, ev_v, nx_v, feats, seeds, **spec)
+        j = corr_table(a, b, out_nx, min_n)
+        tables[name] = j
+        m = metrics(j); m["pitch_r2_next"] = r2; m["n_pitchers"] = len(j)
+        m["n_train"] = int(train[need].notna().all(axis=1).sum())
+        m["pitch_type_stickiness"] = pitch_type_stickiness(ev_v, nx_v, s_ev, s_nx, min_n)
+        imp = getattr(model, "feature_importances_", None)
+        if imp is not None:
+            m["top_features"] = [f for _, f in sorted(zip(imp, feats), reverse=True)[:6]]
+        results[name] = m
+        print(f"\n{name}  ({len(feats)} features, {time.time()-t1:.0f}s)", flush=True)
+        for k in KEYS + ["pitch_r2_next"]:
+            print(f"  {k:<14}{m[k]:+.4f}")
+    return results, tables
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variants", nargs="*", default=list(VARIANTS))
-    ap.add_argument("--train", nargs="*", type=int, default=[2022, 2023])
-    ap.add_argument("--eval", type=int, default=2024)
+    ap.add_argument("--folds", nargs="*", type=int, default=list(FOLDS), choices=list(FOLDS))
     ap.add_argument("--min-pitches", type=int, default=100)
     ap.add_argument("--seeds", type=int, default=1, help="average N model seeds")
     ap.add_argument("--boot", type=int, default=1000)
@@ -148,66 +280,58 @@ def main():
     args = ap.parse_args()
 
     t0 = time.time()
-    years = args.train + [args.eval, args.eval + 1]
+    years = sorted({y for f in args.folds for y in FOLDS[f]["train"] + [FOLDS[f]["eval"], FOLDS[f]["eval"] + 1]})
     if args.synthetic:
         from synthetic import make
-        df = add_features(make(n_pitchers=150, pitches_per_season=400, years=tuple(years)))
+        df = add_features(add_expected_target(
+            make(n_pitchers=150, pitches_per_season=400, years=tuple(years))))
     else:
         df = load(HERE / "data", years)
     print(f"loaded {len(df):,} pitches in {time.time()-t0:.0f}s")
     print("env: " + ", ".join(f"{k} {v}" for k, v in env_info().items() if v))
 
-    cum = redundancy_report(df)
+    cum, pca = redundancy_report(df)
     print("\n18 grid angles -> cumulative variance by principal component:")
-    print("  " + "  ".join(f"PC{i+1}:{c:.4f}" for i, c in enumerate(cum[:6])))
+    print("  " + "  ".join(f"PC{i+1}:{c:.6f}" for i, c in enumerate(cum[:6])))
+    print(f"  largest residual sd of any grid angle after a linear fit on the centre "
+          f"VAA/HAA: {pca['max_resid_sd_deg_after_center_pair']:.4f} deg "
+          f"(grid angle sd {pca['grid_angle_sd_deg'][0]:.2f}-{pca['grid_angle_sd_deg'][1]:.2f} deg)")
 
-    train = df[df["year"].isin(args.train)]
-    ev = df[df["year"] == args.eval].dropna(subset=["target"])
-    nxt = df[df["year"] == args.eval + 1].dropna(subset=["target"])
-    out_nx = outcomes(nxt)
-
-    results, tables = {}, {}
     seeds = list(range(args.seeds))
-    for name in args.variants:
-        feats = VARIANTS[name]
-        if df[feats].isna().all().any():
-            print(f"\n{name}: skipped (missing column: "
-                  f"{[f for f in feats if df[f].isna().all()]})")
-            continue
-        ev_v, nx_v = ev.dropna(subset=feats), nxt.dropna(subset=feats)
-        t1 = time.time()
-        a, b, r2, model = evaluate(train, ev_v, nx_v, feats, seeds)
-        j = corr_table(a, b, out_nx, args.min_pitches)
-        tables[name] = j
-        m = metrics(j); m["pitch_r2_next"] = r2; m["n_pitchers"] = len(j)
-        imp = getattr(model, "feature_importances_", None)
-        if imp is not None:
-            m["top_features"] = [f for _, f in sorted(zip(imp, feats), reverse=True)[:6]]
-        results[name] = m
-        print(f"\n{name}  ({len(feats)} features, {time.time()-t1:.0f}s)")
-        for k in ["stickiness", "next_woba", "next_k_bb", "next_rv100", "pitch_r2_next"]:
-            print(f"  {k:<14}{m[k]:+.4f}")
+    fold_results, fold_tables = {}, {}
+    for f in args.folds:
+        fold_results[f], fold_tables[f] = run_fold(
+            df, f, FOLDS[f]["train"], FOLDS[f]["eval"], args.variants, seeds, args.min_pitches)
 
-    base = "A_tj_v3"
-    if base in tables:
-        print(f"\nDifference vs {base} (paired bootstrap 95% CI, {args.boot} reps):")
-        for name, j in tables.items():
-            if name == base:
+    # variant minus baseline: per fold and mean of folds
+    comparison = {}
+    done = [n for n in args.variants if all(n in fold_tables[f] for f in args.folds)]
+    if BASE in done:
+        print(f"\nDifference vs {BASE} (paired bootstrap 95% CI, {args.boot} reps), "
+              f"{'mean of folds ' + str(args.folds) if len(args.folds) > 1 else 'fold ' + str(args.folds[0])}:")
+        for name in done:
+            if name == BASE:
                 continue
-            ci = bootstrap_diff(tables[base], j, n=args.boot)
-            results[name]["ci_vs_A"] = ci
-            line = "  ".join(
-                f"{k}: {results[name][k]-results[base][k]:+.3f} [{lo:+.3f},{hi:+.3f}]"
-                for k, (lo, hi) in ci.items())
+            bs = bootstrap_folds([fold_tables[f][BASE] for f in args.folds],
+                                 [fold_tables[f][name] for f in args.folds], n=args.boot)
+            comparison[name] = {"folds": {f: {"diff": bs["diff"][i], "ci": bs["ci"][i]}
+                                          for i, f in enumerate(args.folds)},
+                                "mean": {"diff": bs["mean_diff"], "ci": bs["mean_ci"]}}
+            line = "  ".join(f"{k}: {bs['mean_diff'][k]:+.3f} [{lo:+.3f},{hi:+.3f}]"
+                             for k, (lo, hi) in bs["mean_ci"].items())
             print(f"  {name:<24}{line}")
 
     (HERE / "results").mkdir(exist_ok=True)
-    tag = "synthetic" if args.synthetic else f"{args.eval}"
-    with open(HERE / "results" / f"ablation_{tag}.json", "w") as f:
-        json.dump({"args": vars(args), "seeds": seeds, "env": env_info(),
-                   "grid_pca_cumvar": cum.tolist(), "results": results},
+    tag = "synthetic" if args.synthetic else "folds" + "".join(map(str, args.folds))
+    path = HERE / "results" / f"ablation_{tag}.json"
+    with open(path, "w") as f:
+        json.dump({"args": vars(args), "seeds": seeds, "env": env_info(), "baseline": BASE,
+                   "folds": {k: FOLDS[k] for k in args.folds}, "specs": SPECS,
+                   "variants": {n: VARIANTS[n] for n in args.variants},
+                   "grid_pca_cumvar": cum.tolist(), "grid_pca": pca,
+                   "results": fold_results, "vs_baseline": comparison},
                   f, indent=2, default=float)
-    print(f"\nsaved results/ablation_{tag}.json  (total {time.time()-t0:.0f}s)")
+    print(f"\nsaved {path.relative_to(HERE)}  (total {time.time()-t0:.0f}s)")
 
 
 if __name__ == "__main__":

@@ -15,15 +15,17 @@ tjStuff+ v3.0's feature set, using his validation design on 2022–2026 data
 bash setup.sh                 # .venv + pinned requirements.txt + synthetic smoke test
 source .venv/bin/activate
 pytest -q                     # physics, target mapping, feature engineering
-python fetch_data.py          # 2022-2026 Statcast, cached to data/ (slow, once)
-python run_ablation.py        # all variants, ~a few minutes each with LightGBM
-python run_ablation.py --seeds 3   # average 3 model seeds (recommended for final numbers)
-python run_ablation.py --train 2022 2023 2024 --eval 2025   # fold 2
+python fetch_data.py          # 2022-2026 Statcast, cached to data/ (resumable, ~15 min)
+python data_quality.py        # reports/data_quality.md
+python baseline_checks.py     # sanity checks on the tjStuff+ v3.0 baseline
+python run_ablation.py --seeds 3 --boot 2000   # all variants, both folds
+python report_ablation.py     # reports/ablation.md
+python run_ablation.py --folds 1 --variants A_tj_v3 H_plus_ssw   # a subset
 python run_ablation.py --synthetic # smoke test, no data needed
 ```
 
 If LightGBM isn't installed it falls back to sklearn's histogram GBM with
-matched settings. Results land in `results/ablation_<eval year>.json`, together
+matched settings. Results land in `results/ablation_folds12.json`, together
 with the CLI arguments, model seeds, and library versions used for the run.
 Versions are pinned for Python 3.9; on Apple Silicon LightGBM needs
 `brew install libomp` (`setup.sh` does this). CI runs only `pytest` and the
@@ -51,7 +53,13 @@ exactly, so the physics is checked against Statcast's own fit.
 | D_grid9_angles_only | Your proposal: velo, spin, extension, speed diff, VAA/HAA diffs + 9-point grid. No az/ax, no release, no arm angle |
 | D1_center_angles_only | D with one center point instead of 9 |
 | E_plus_arm_angle | A + arm angle |
-| F_plus_spin_axis | A + spin axis (in the v3.0 article, not in the notebook) |
+| F_plus_spin_axis | A + spin axis, mirrored for LHP (in the v3.0 article, not in the notebook) |
+| G_plus_same_side | A + batter handedness as same-side vs opposite-side |
+| H_plus_ssw | A + seam-shifted-wake proxy: observed spin axis minus the axis implied by pfx_x/pfx_z |
+| I_recency_weighted | A's features; each training season weighted 0.5 ** (seasons before the latest) |
+| J_expected_target | A's features; balls in play valued by xwOBA converted to runs for the count |
+| C1_center_no_accel | C with the grid collapsed to its centre point |
+| A50_tj_v3_y50 | Reference: A with release x/z from the fit at y=50 (TJ's MLB-API definition) |
 
 ## Reading the output
 
@@ -59,8 +67,11 @@ exactly, so the physics is checked against Statcast's own fit.
   (trained on 2020–22), so treat that as a rough reference, not an exact target.
 - **next_woba / next_rv100**: correlation with next-season results, sign-flipped so higher = better.
 - **next_k_bb**: correlation with next-season K−BB%.
-- **CI vs A**: paired bootstrap over pitchers. If the interval contains 0, the
-  variant isn't distinguishable from the baseline.
+- **CI vs A**: paired bootstrap over pitchers, per fold and for the mean of the
+  folds (a pitcher in both folds is resampled into both together). If the
+  interval contains 0, the variant isn't distinguishable from the baseline.
+- **pitch-type stickiness**: the same year-over-year correlation per pitcher ×
+  pitch type (FF, SI, FC, SL, ST, CU, KC, CH, FS).
 - **grid PCA**: cumulative variance of the 18 grid angles. Under the
   constant-acceleration fit, VAA depends only on the target's height and HAA
   only on its width, so expect ~2–3 components to explain essentially all of it.
@@ -68,7 +79,10 @@ exactly, so the physics is checked against Statcast's own fit.
 ## Notes on fidelity to tjStuff+ v3.0
 
 - Target: same count-specific run-value table (`run_values.csv`, from his repo).
-- Release x/z use Statcast `release_pos_*`; his notebook uses MLB API `x0/z0`.
+- Release x/z use Statcast `release_pos_*`; his notebook uses MLB API `x0/z0`
+  (the fit at y=50). `A50_tj_v3_y50` is that version; it tracks his published
+  2024 scores more closely (r = 0.94 vs 0.91) but validates slightly worse, so
+  the release-point version is the baseline to beat.
 - RobustScaler is omitted (no effect on tree models).
 - Outcomes his `event_dict` maps to None (`field_error`, `strikeout_double_play`,
   `catcher_interf`, ...) have no target and are dropped, as in his notebook.

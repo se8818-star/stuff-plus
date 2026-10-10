@@ -70,4 +70,17 @@ def make(n_pitchers=400, pitches_per_season=900, years=(2022, 2023, 2024, 2025, 
                             rng.choice(["strikeout", "walk", "single", "field_out"], len(df),
                                        p=[0.23, 0.08, 0.2, 0.49]), None)
     df["arm_angle"] = rng.normal(40, 12, len(df))
+    # columns needed by variants G (batter side), H (spin axis vs movement) and
+    # J (xwOBA-valued balls in play)
+    df["stand"] = rng.choice(["L", "R"], len(df), p=[0.42, 0.58])
+    df["balls"] = rng.integers(0, 4, len(df))
+    df["strikes"] = rng.integers(0, 3, len(df))
+    in_play = df["events"].isin(["single", "field_out"])
+    df["description"] = np.where(in_play, "hit_into_play", "ball")
+    df["estimated_woba_using_speedangle"] = np.where(
+        in_play, np.clip(rng.normal(0.35, 0.3, len(df)), 0, 2), np.nan)
+    df["pfx_x"] = df["ax"] * 0.08
+    df["pfx_z"] = (df["az"] + 32.17) * 0.08
+    implied = (np.degrees(np.arctan2(df["pfx_z"], df["pfx_x"])) + 90) % 360
+    df["spin_axis"] = (implied + rng.normal(0, 15, len(df))) % 360
     return df

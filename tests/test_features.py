@@ -120,8 +120,10 @@ def test_handedness_mirroring(fixture):
     # mirroring a whole pitcher leaves every model feature unchanged
     flipped = raw.copy()
     flipped["p_throws"] = np.where(lhp, "R", "L")
-    for c in ("release_pos_x", "vx0", "ax", "plate_x"):
+    for c in ("release_pos_x", "vx0", "ax", "plate_x", "pfx_x"):
         flipped[c] = -flipped[c]
+    flipped["spin_axis"] = (360 - flipped["spin_axis"]) % 360
+    flipped["stand"] = np.where(flipped["stand"] == "L", "R", "L")
     all_feats = sorted({f for v in VARIANTS.values() for f in v})
     pd.testing.assert_frame_equal(add_features(flipped)[all_feats], df[all_feats],
                                   check_exact=False, atol=1e-9, rtol=0)
@@ -177,3 +179,61 @@ def test_features_accept_statcast_nullable_dtypes(fixture):
     feats = sorted({f for v in VARIANTS.values() for f in v})
     got = add_features(features.plain_dtypes(nullable))
     pd.testing.assert_frame_equal(got[feats], df[feats], check_dtype=False)
+
+
+# ------------------------------------------------------- variants G, H, I, J
+def test_same_side_flag(fixture):
+    raw, df = fixture
+    np.testing.assert_array_equal(df["same_side"], (raw["stand"] == raw["p_throws"]) * 1.0)
+    assert set(df["same_side"]) == {0.0, 1.0}
+
+
+@pytest.mark.parametrize("hand,pfx_x,pfx_z,axis,want", [
+    ("R", 0.0, 1.0, 180.0, 0.0),        # pure backspin, pure rise
+    ("R", -1.0, 1.0, 225.0, 0.0),       # RHP arm-side run + rise <-> 1:30 axis
+    ("R", -1.0, 1.0, 255.0, 30.0),
+    ("L", 1.0, 1.0, 135.0, 0.0),        # the mirror image for a lefty
+    ("L", 1.0, 1.0, 105.0, 30.0),       # same physical deviation, same sign
+    ("R", 0.0, 1.0, 10.0, -170.0),      # wraps into (-180, 180]
+])
+def test_ssw_deviation(fixture, hand, pfx_x, pfx_z, axis, want):
+    raw, _ = fixture
+    one = raw.iloc[:20].assign(p_throws=hand, pfx_x=pfx_x, pfx_z=pfx_z, spin_axis=axis)
+    np.testing.assert_allclose(add_features(one)["ssw_dev"], want, atol=1e-9)
+
+
+def test_y50_release_point_is_on_the_trajectory(fixture):
+    raw, df = fixture
+    # synthetic rows are built from the release point, so stepping the fit
+    # from y=50 back to release must return to release_pos (up to ext jitter)
+    assert (df["x0_50"] > 0).all()
+    assert (df["z0_50"] < df["z0"]).mean() > 0.9         # ball is already dropping by y=50
+    assert (df["x0_50"] - df["x0"]).abs().max() < 1.0
+
+
+def test_expected_target_only_changes_balls_in_play():
+    lines = features.xwoba_to_runs().set_index(["balls", "strikes"])
+    assert len(lines) == 12 and (lines["xrv_b"] > 0.5).all()
+    rv = RV.set_index(["event", "balls", "strikes"])["delta_run_exp"]
+    # the line reproduces the table's own in-play values closely
+    for (b, s), row in lines.iterrows():
+        for evt in ("field_out", "single"):          # the outcomes that dominate balls in play
+            w = features.WOBA_BIP[evt]
+            assert row["xrv_a"] + row["xrv_b"] * w == pytest.approx(rv[evt, int(b), int(s)], abs=0.03)
+    df = pd.DataFrame({
+        "events": ["single", "field_out", None, "home_run", "strikeout"],
+        "description": ["hit_into_play", "hit_into_play", "ball", "hit_into_play", "swinging_strike"],
+        "balls": [1, 1, 1, 0, 0], "strikes": [1, 1, 1, 0, 2],
+        "estimated_woba_using_speedangle": [0.2, 0.9, np.nan, np.nan, 0.0]})
+    out = features.add_expected_target(add_target(df))
+    a, b = lines.loc[(1.0, 1.0)]
+    assert out["target_x"].iloc[0] == pytest.approx(a + 0.2 * b)      # weak single -> near an out
+    assert out["target_x"].iloc[1] == pytest.approx(a + 0.9 * b)      # hard-hit out -> near a single
+    assert out["target_x"].iloc[0] < out["target"].iloc[0]
+    assert out["target_x"].iloc[1] > out["target"].iloc[1]
+    np.testing.assert_allclose(out["target_x"].iloc[2:], out["target"].iloc[2:])  # unchanged
+
+
+def test_specs_refer_to_real_variants():
+    assert set(features.SPECS) <= set(VARIANTS)
+    assert VARIANTS["I_recency_weighted"] == VARIANTS["A_tj_v3"] == VARIANTS["J_expected_target"]
