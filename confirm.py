@@ -1,7 +1,7 @@
 """
 One-shot confirmation on the locked fold 2 (PREREGISTRATION.md):
 train 2022-24, score 2025, validate against 2026, for frozen A and the frozen
-winner only.
+candidates named in FROZEN.json only.
 
     python confirm.py --unlock-fold2
 
@@ -22,7 +22,7 @@ from sklearn.model_selection import GroupKFold
 import run_ablation as ra
 from develop import KEY, MIN_PITCHES, N_BOOT, N_INNER, pitcher_table, shrink, split_half_k, stuff_plus
 from features import load
-from models import CANDIDATES, add_outcome_flags, fit_predict
+from models import AMENDED, CANDIDATES, add_outcome_flags, fit_predict
 
 HERE = Path(__file__).parent
 TRAIN_YEARS, EVAL_YEAR = [2022, 2023, 2024], 2025
@@ -37,16 +37,19 @@ def verdict(vs100):
 
 
 def run_confirmation(df, frozen, train_years, eval_year, n_boot=N_BOOT, log=print):
-    """Fit frozen A and the frozen winner on `train_years`, score `eval_year`
+    """Fit frozen A and each frozen candidate on `train_years`, score `eval_year`
     and the next season. Returns metrics (raw and shrunk, at each minimum),
-    paired bootstrap against A, and the rule's verdict."""
-    names = ["A"] + [n for n in [frozen["winner"]] if n != "A"]
+    paired bootstrap against A, the rule's verdict per candidate, and which
+    model ships."""
+    tested = [n for n in frozen.get("test", [frozen.get("winner")]) if n and n != "A"]
+    names = ["A"] + tested
+    specs = {**CANDIDATES, **AMENDED}
     tr = df[df["year"].isin(train_years)]
     first, nxt = df[df["year"] == eval_year], df[df["year"] == eval_year + 1]
     out_next = ra.outcomes(nxt)
     res, tables, ks = {}, {}, {}
     for name in names:
-        spec, params = CANDIDATES[name], frozen["params"].get(name)
+        spec, params = specs[name], frozen["params"].get(name)
         t0 = time.time()
         (p1, p2), info = fit_predict(spec, tr, [first, nxt], params)
         log(f"{name}: fitted ({time.time() - t0:.0f}s)")
@@ -80,14 +83,18 @@ def run_confirmation(df, frozen, train_years, eval_year, n_boot=N_BOOT, log=prin
         res[name] = r
     out = {"train_years": train_years, "eval_year": eval_year, "frozen": frozen,
            "results": res, "shrinkage": ks}
-    if len(names) == 2:
-        w = names[1]
-        out["vs_A"] = {}
+    out["vs_A"], out["verdict"] = {}, {}
+    for w in tested:
+        out["vs_A"][w] = {}
         for shr in ("raw", "shrunk"):
             for mn in MIN_PITCHES:
                 bs = ra.bootstrap_folds([tables[("A", shr, mn)]], [tables[(w, shr, mn)]], n=n_boot)
-                out["vs_A"][f"{shr}_{mn}"] = {"diff": bs["diff"][0], "ci": bs["ci"][0]}
-        out["verdict"] = verdict(out["vs_A"]["raw_100"])
+                out["vs_A"][w][f"{shr}_{mn}"] = {"diff": bs["diff"][0], "ci": bs["ci"][0]}
+        out["verdict"][w] = verdict(out["vs_A"][w]["raw_100"])
+    # which model ships: a confirmed candidate (the better one on fold 2 if both), else A
+    confirmed = [w for w in tested if out["verdict"][w]["confirmed"]]
+    score = lambda n: np.mean([res[n]["raw_100"][m] for m in ("next_woba", "next_rv100")])  # noqa: E731
+    out["ships"] = max(confirmed, key=score) if confirmed else "A"
     return out
 
 
@@ -118,7 +125,7 @@ def main():
                                           text=True).stdout.strip()
     out["seconds"] = time.time() - t0
     out_path.write_text(json.dumps(out, indent=1, default=float))
-    print(json.dumps({k: out[k] for k in ("verdict", "vs_A") if k in out}, indent=1))
+    print(json.dumps({k: out[k] for k in ("ships", "verdict")}, indent=1))
     print(f"wrote {out_path.name} ({out['seconds']:.0f}s)")
 
 

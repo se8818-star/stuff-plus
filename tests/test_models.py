@@ -130,15 +130,17 @@ def test_confirmation_runs_end_to_end_and_applies_the_rule(data):
                   ignore_index=True)
     d["woba_denom"] = 1
     small = {"n_estimators": 10, "learning_rate": 0.1}
-    out = confirm.run_confirmation(d, {"winner": "JGH", "params": {"A": small, "JGH": small}},
+    out = confirm.run_confirmation(d, {"test": ["J", "S6"], "params": {"A": small, "J": small, "S6": small}},
                                    [2022], 2023, n_boot=50, log=lambda m: None)
-    assert set(out["results"]) == {"A", "JGH"} and set(out["vs_A"]) == {
-        f"{s}_{m}" for s in ("raw", "shrunk") for m in (100, 300, 500)}
+    assert list(out["results"]) == ["A", "J", "S6"] and set(out["vs_A"]) == {"J", "S6"}
+    assert set(out["vs_A"]["J"]) == {f"{s}_{m}" for s in ("raw", "shrunk") for m in (100, 300, 500)}
     assert out["results"]["A"]["raw_100"]["n"] == 12 and out["shrinkage"]["A"]["pitcher"]["k"] > 0
-    assert isinstance(out["verdict"]["confirmed"], bool)
-    solo = confirm.run_confirmation(d, {"winner": "A", "params": {}}, [2022], 2023, n_boot=10,
+    assert all(isinstance(v["confirmed"], bool) for v in out["verdict"].values())
+    confirmed = [w for w, v in out["verdict"].items() if v["confirmed"]]
+    assert out["ships"] in (confirmed or ["A"])
+    solo = confirm.run_confirmation(d, {"test": [], "params": {}}, [2022], 2023, n_boot=10,
                                     log=lambda m: None)
-    assert "verdict" not in solo and list(solo["results"]) == ["A"]
+    assert solo["verdict"] == {} and solo["ships"] == "A" and list(solo["results"]) == ["A"]
 
 
 @pytest.mark.parametrize("woba,rv,stick,want", [

@@ -198,3 +198,37 @@ S6 is run on the inner CV and fold 1 and reported next to the others. It does
 not change the stage 1 winner (J), which was fixed by the original rule. Whether
 and how S6 is run on fold 2 is decided and recorded here before fold 2 is
 unlocked.
+
+
+### 2. Stage 2 tuning skipped (owner's decision, after stage 1, before fold 2)
+
+No hyperparameters are tuned. A, J and S6 are frozen at TJ's LightGBM
+settings. Reason: limiting overtuning is a stated goal, stage 1 separated no
+candidate from A, and the tuned-versus-untuned adoption step would have been
+decided by a score whose sampling noise (about ±0.04) dwarfs any plausible
+tuning gain. This removes a choice; it cannot favour any candidate. `tune.py`
+stays in the repo, unrun.
+
+### 3. Two candidates on fold 2: J and S6 (owner's decision, before fold 2)
+
+Fold 2 is run once for A, J (the stage 1 winner under the original rule) and
+S6 (deviation 1). Stage 1 development results for all three were known when
+this was decided; no fold 2 result was.
+
+- The original confirmation rule is applied to J and to S6 separately and
+  unchanged: at minimum 100 pitches, unshrunk, next wOBA and next RV/100 both
+  above A with paired-bootstrap 95% CIs excluding 0, and stickiness no more
+  than 0.01 below A.
+- Two comparisons instead of one: the chance that at least one passes with no
+  true difference is at most 5%, up from at most 2.5%. No multiplicity
+  correction is applied; both verdicts are reported.
+- What ships: if exactly one is confirmed, that one. If both, the one with the
+  higher mean of its fold 2 next-wOBA and next-RV/100 correlations. If neither,
+  A at TJ's settings.
+- S6's development stickiness was 0.02–0.05 below A's, so on development
+  evidence it is expected to fail the stickiness condition.
+
+### 4. Shrinkage decision
+
+Recorded in `FROZEN.md`: shrinkage ships in the leaderboards for whichever
+model ships, since it did not lower the fold 1 score of A, J or S6.
