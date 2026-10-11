@@ -23,6 +23,9 @@ python baseline_checks.py     # sanity checks on the tjStuff+ v3.0 baseline
 python develop.py             # all candidates: inner CV + fold 1 -> reports/development_stage1.md
 python confirm.py --unlock-fold2 && python report_confirmation.py   # ran once; refuses to rerun
 python final.py               # models/, leaderboards/, park check
+python final.py --model S6    # six-variable comparison model (files suffixed _s6)
+python compare_models.py      # leaderboards/comparison_2026.csv, reports/comparison_a_vs_s6.md
+python overfit_check.py       # reports/overfit_check.md
 python run_ablation.py --synthetic   # smoke test, no data needed
 ```
 

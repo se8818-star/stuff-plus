@@ -212,6 +212,23 @@ standard deviation; pooled over 2022–2026 it is −5.7. Scores are **not** par
 adjusted. All parks: `reports/park_check_2026.csv`,
 `reports/park_check_2022_2026.csv`.
 
+## Six-variable comparison model (S6)
+
+For side-by-side comparison, S6 is also trained on 2022–2026 with the same
+procedure and published next to the shipped model: `models/stuffplus_s6_v1.0.0.json`,
+`leaderboards/pitchers_2026_s6.csv`, `leaderboards/pitch_types_2026_s6.csv`,
+`leaderboards/comparison_2026.csv`, and `reports/comparison_a_vs_s6.md`. It is
+**not** the recommended model: it was not confirmed as better than A, and it
+trails A at 300 and 500 pitches.
+
+- Pitcher scores from the two models correlate 0.80; the median difference is
+  1.7 points and 9% of pitchers differ by more than 5.
+- They disagree most on unusual arm slots and cutters. S6 scores submarine and
+  sidearm relievers far lower (Tyler Rogers 109.7 → 90.1), because it has no
+  release-position input.
+- S6 is less affected by Coors (−2.4 against −5.4) and slightly more tied to
+  velocity (r = 0.69 against 0.63).
+
 ## Limitations
 
 - **Did not beat the baseline.** This model's feature set is tjStuff+ v3.0's.
