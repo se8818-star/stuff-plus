@@ -43,6 +43,34 @@ GBM. Every run records its arguments, seeds and library versions under
 `brew install libomp` (`setup.sh` does this). CI runs only `pytest` and the
 synthetic smoke test — it never downloads data.
 
+## Leaderboard website
+
+```bash
+pip install -r requirements.txt
+python serve.py               # http://127.0.0.1:8000
+```
+
+The first run trains a model and builds the leaderboards (`webapp/build.py`), then
+caches them in `models/stuffplus_site_<variant>.joblib`. Without `data/` it serves a
+synthetic demo (with a banner saying so). After fetching data or changing the model,
+run `python serve.py --rebuild`. Use `--variant B_plus_center` (any name from the table
+below) or `--train 2022 2023 2024 2025` to change what's trained; by default it trains
+on every season in `data/`, so those leaderboards are in-sample.
+
+- **Pitchers**: pitcher-season Stuff+, 20-80 grade, Stuff+ per pitch type, filters
+  for hand, SP/RP (inferred from who threw first in each game), min pitches, CSV export.
+- **Pitches**: one row per pitcher × pitch type with velo, spin, IVB/HB, extension.
+- **Explore**: scatter any two pitch characteristics, coloured by Stuff+.
+- **Grade a pitcher**: type in an arsenal (velo, spin, IVB, HB, release, extension,
+  usage) and get Stuff+, a 20-80 grade, and a percentile per pitch as you type. You can
+  start from any MLB pitcher's arsenal and tweak it.
+
+The grader builds Statcast-shaped rows from the inputs and runs them through
+`features.add_features`, so it uses exactly the same features as the model. Movement
+uses Savant conventions (inches, y = 40 ft to the plate, HB positive to the arm side).
+A pitch's grade is the model's grade for the *average* pitch you describe, which can
+differ slightly from a leaderboard number (the mean of every individual pitch's grade).
+
 ## How the 9-point angles work (`physics.py`)
 
 1. Rewind Statcast's 9-parameter fit to the release plane (60.5 − extension).
