@@ -169,4 +169,32 @@ fold 1, unshrunk, minimum 100 pitches in both seasons.
 
 ## Deviations
 
-None.
+### 1. Candidate S6 added after stage 1 results (owner's request)
+
+Added after the stage 1 results for the six original candidates had been
+seen, so it does not have the protection the original list has. Written and
+committed before S6 was run on anything.
+
+| # | Name | Features (6) | Target |
+|---|---|---|---|
+| 7 | S6 | velocity, extension, location-neutral VAA, location-neutral HAA, VAA difference from the primary fastball, absolute HAA difference from the primary fastball | TJ count-specific run value (as A) |
+
+- VAA/HAA are the centre-of-zone point of the fixed 3×3 grid (`vaa_ln`,
+  `haa_ln`). The 18 grid angles span two dimensions (first two principal
+  components explain 100.00% of their variance), so the centre pair carries the
+  whole grid.
+- The fastball differences use the same primary-fastball reference as A:
+  `vaa_diff` is signed, `haa_diff` is absolute (as A's `ax_diff` is).
+- No spin rate, release position, or acceleration terms.
+- TJ's LightGBM settings, seeds 0–2, same scoring conventions as every other
+  candidate.
+
+What was already known when S6 was added: stage 1 results for A, J, G, H,
+J+G+H and the component model. No result for any approach-angle model has been
+seen (the earlier all-variant run that included similar variants was stopped
+and its log deleted unread).
+
+S6 is run on the inner CV and fold 1 and reported next to the others. It does
+not change the stage 1 winner (J), which was fixed by the original rule. Whether
+and how S6 is run on fold 2 is decided and recorded here before fold 2 is
+unlocked.

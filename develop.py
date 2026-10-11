@@ -22,7 +22,7 @@ from sklearn.model_selection import GroupKFold
 
 import run_ablation as ra
 from features import load
-from models import CANDIDATES, CONTROLS, add_outcome_flags, fit_predict
+from models import AMENDED, CANDIDATES, CONTROLS, add_outcome_flags, fit_predict
 
 HERE = Path(__file__).parent
 TRAIN_YEARS, EVAL_YEAR = [2022, 2023], 2024
@@ -257,7 +257,7 @@ def main():
     ap.add_argument("--analyse-only", action="store_true")
     args = ap.parse_args()
 
-    specs = {**CANDIDATES, **CONTROLS}
+    specs = {**CANDIDATES, **AMENDED, **CONTROLS}
     names = args.only or list(specs)
     params = json.loads(Path(args.params).read_text())["params"] if args.params else None
     pdir = HERE / "results" / "preds"

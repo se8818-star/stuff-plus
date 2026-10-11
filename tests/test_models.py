@@ -35,6 +35,7 @@ def test_candidate_list_is_the_preregistered_one():
     assert list(models.CANDIDATES) == ["A", "J", "G", "H", "JGH", "COMP"]
     assert models.CANDIDATES["JGH"]["features"] == models.CANDIDATES["COMP"]["features"]
     assert models.CANDIDATES["A"]["features"] == models.CANDIDATES["J"]["features"]
+    assert list(models.AMENDED) == ["S6"] and len(models.AMENDED["S6"]["features"]) == 6
     assert models.TJ_PARAMS["n_estimators"] == 1000 and models.TJ_PARAMS["learning_rate"] == 0.01
 
 

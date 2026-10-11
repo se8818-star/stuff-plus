@@ -25,6 +25,12 @@ CANDIDATES = {
     "JGH": dict(kind="direct", features=JGH, target="target_x"),
     "COMP": dict(kind="component", features=JGH, target="target_x"),
 }
+# Added after stage 1 at the owner's request (PREREGISTRATION.md, Deviations):
+# a six-variable model on location-neutral approach angles.
+AMENDED = {
+    "S6": dict(kind="direct", target="target",
+               features=["start_speed", "extension", "vaa_ln", "haa_ln", "vaa_diff", "haa_diff"]),
+}
 # Null control, not a candidate: A with different seeds
 CONTROLS = {"A_reseeded": dict(kind="direct", features=TJ_V3, target="target", seeds=(3, 4, 5))}
 
