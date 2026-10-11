@@ -112,3 +112,9 @@ table.inputs input[data-k=spin] { width: 66px; }
 table.inputs input::-webkit-inner-spin-button { display: none; }
 table.inputs input { -moz-appearance: textfield; }
 .note { margin: 0 0 10px; }
+#g-name { min-width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; }
+.empty { max-width: 560px; }
+.empty p { margin: 0; }
+.arsenal-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.arsenal-chips span { white-space: nowrap; font-size: 12.5px; }
+td .icon.danger:hover { color: var(--good); }

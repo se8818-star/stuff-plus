@@ -18,6 +18,7 @@
     <button data-tab="pitches">Pitches</button>
     <button data-tab="explore">Explore</button>
     <button data-tab="grader">Grade a pitcher</button>
+    <button data-tab="custom">My pitchers</button>
   </nav>
   <label class="season">Season <select id="season"></select></label>
 </header>
@@ -76,6 +77,20 @@
     </div>
   </section>
 
+  <!-- My pitchers -->
+  <section id="tab-custom" class="tab">
+    <div class="controls">
+      <span class="muted">Pitchers you've saved from the grader, graded live with the current model and season scale.</span>
+      <span class="spacer"></span>
+      <button id="c-new">New pitcher</button>
+    </div>
+    <div id="c-empty" class="card empty" hidden>
+      <h3>No saved pitchers yet</h3>
+      <p class="muted">Build an arsenal in <b>Grade a pitcher</b> (from scratch or starting from an MLB pitcher), give it a name and press <b>Save pitcher</b>. It will show up here.</p>
+    </div>
+    <div class="table-wrap" id="c-wrap"><table id="c-table"></table></div>
+  </section>
+
   <!-- Grader -->
   <section id="tab-grader" class="tab">
     <div class="grader">
@@ -88,6 +103,12 @@
           </div>
           <span class="spacer"></span>
           <button id="g-reset" class="ghost">Reset</button>
+        </div>
+        <div class="controls tight">
+          <input id="g-name" type="text" placeholder="Name this pitcher to save it" maxlength="80">
+          <button id="g-save">Save pitcher</button>
+          <button id="g-save-new" class="ghost" hidden>Save as new</button>
+          <span id="g-saved" class="muted small"></span>
         </div>
         <div class="table-wrap"><table id="g-table" class="inputs"></table></div>
         <div class="controls tight">

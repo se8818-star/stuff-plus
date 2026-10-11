@@ -76,6 +76,10 @@ the raw numbers instead; `--spread center` centres every pitch type at 100.
 - **Grade a pitcher**: type in an arsenal (velo, spin, IVB, HB, release, extension,
   usage) and get Stuff+, a 20-80 grade, and a percentile per pitch as you type. You can
   start from any MLB pitcher's arsenal and tweak it.
+- **My pitchers**: name an arsenal in the grader and save it. Saved pitchers are listed
+  with their live Stuff+, grade, percentile and per-pitch scores, and open back in the
+  grader for editing. They're stored in `custom_pitchers.json` at the repo root
+  (gitignored), so they survive restarts and rebuilds.
 
 The grader builds Statcast-shaped rows from the inputs and runs them through
 `features.add_features`, so it uses exactly the same features as the model. Movement

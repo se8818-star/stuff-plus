@@ -313,7 +313,7 @@ const G_FIELDS = [
   ["spin_axis", "Axis", 1, true, "Spin axis (deg, 180 = pure backspin). Optional"],
   ["arm_angle", "Arm°", 1, true, "Arm angle (deg). Optional"],
 ];
-const G = { hand: "R", pitches: [] };
+const G = { hand: "R", pitches: [], customId: null, name: "" };
 function newPitch(t) { return { pitch_type: t, ...TEMPLATES[t], ...ARM, spin_axis: null, arm_angle: null }; }
 function defaultArsenal() { return [newPitch("FF"), newPitch("SL"), newPitch("CH")].map((p, i) => ({ ...p, usage: [50, 30, 20][i] })); }
 function saveG() { try { localStorage.setItem("stuffplus.grader", JSON.stringify(G)); } catch (e) { /* storage unavailable */ } }
@@ -330,10 +330,14 @@ function loadArsenal(hand, rows) {
     spin_axis: p.spin_axis == null ? null : Math.round(p.spin_axis), arm_angle: p.arm_angle == null ? null : Math.round(p.arm_angle),
   }));
   $("#g-note").dataset.src = `Loaded from ${rows[0]?.name} (${rows[0]?.year}).`;
-  renderGraderInputs(); gradeNow();
+  G.customId = null; G.name = "";
+  saveG(); renderGraderInputs(); gradeNow();
 }
 function renderGraderInputs() {
   document.querySelectorAll("#g-hand button").forEach(b => b.classList.toggle("on", b.dataset.v === G.hand));
+  $("#g-name").value = G.name || "";
+  $("#g-save").textContent = G.customId ? "Save changes" : "Save pitcher";
+  $("#g-save-new").hidden = !G.customId;
   const types = Object.keys(TEMPLATES);
   const head = `<thead><tr><th class="l">Pitch</th>${G_FIELDS.map(([, l, , , tip]) =>
     `<th title="${tip}">${l}</th>`).join("")}<th></th></tr></thead>`;
@@ -345,6 +349,7 @@ function renderGraderInputs() {
   t.querySelectorAll("input, select").forEach(inp => inp.oninput = () => {
     const i = +inp.closest("tr").dataset.i, k = inp.dataset.k;
     G.pitches[i][k] = k === "pitch_type" ? inp.value : (inp.value === "" ? null : +inp.value);
+    if (G.customId) $("#g-saved").textContent = "Unsaved changes";
     saveG(); scheduleGrade();
   });
   t.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
@@ -393,7 +398,10 @@ function wireGrader() {
   wireSeg("g-hand", () => { G.hand = segValue("g-hand"); saveG(); gradeNow(); });
   $("#g-add-type").innerHTML = Object.keys(TEMPLATES).map(t => `<option value="${t}">${t} · ${ptName(t)}</option>`).join("");
   $("#g-add").onclick = () => { if (G.pitches.length >= 12) return; G.pitches.push(newPitch($("#g-add-type").value)); saveG(); renderGraderInputs(); gradeNow(); };
-  $("#g-reset").onclick = () => { G.hand = "R"; G.pitches = defaultArsenal(); delete $("#g-note").dataset.src; saveG(); renderGraderInputs(); gradeNow(); };
+  $("#g-reset").onclick = () => { G.hand = "R"; G.pitches = defaultArsenal(); G.customId = null; G.name = ""; delete $("#g-note").dataset.src; saveG(); renderGraderInputs(); gradeNow(); };
+  $("#g-name").oninput = e => { G.name = e.target.value; saveG(); };
+  $("#g-save").onclick = () => saveCustom(false);
+  $("#g-save-new").onclick = () => saveCustom(true);
   const inp = $("#g-load"), list = $("#g-load-list");
   inp.oninput = () => {
     const q = inp.value.trim().toLowerCase();
@@ -411,11 +419,74 @@ function wireGrader() {
   document.addEventListener("click", e => { if (!e.target.closest(".loader")) list.hidden = true; });
 }
 
+// ------------------------------------------------------------- my pitchers
+const C = { rows: [] };
+async function saveCustom(asNew) {
+  const name = (G.name || "").trim();
+  if (!name) { $("#g-name").focus(); $("#g-saved").textContent = "Give the pitcher a name first."; return; }
+  const body = JSON.stringify({ name, hand: G.hand, pitches: G.pitches.map(p => ({ ...p, usage: p.usage ?? 0 })) });
+  const opts = { headers: { "Content-Type": "application/json" }, body };
+  try {
+    const row = G.customId && !asNew
+      ? await api(`/api/custom/${G.customId}`, { ...opts, method: "PUT" })
+      : await api("/api/custom", { ...opts, method: "POST" });
+    G.customId = row.id; saveG(); renderGraderInputs();
+    $("#g-saved").textContent = `Saved “${row.name}” to My pitchers.`;
+    loadCustom();
+  } catch (e) {
+    let msg = e.message;
+    try { msg = JSON.parse(msg.slice(msg.indexOf("{"))).detail.map(d => `${d.loc.slice(-1)[0]}: ${d.msg}`).join("; "); } catch (_) { /* raw */ }
+    $("#g-saved").textContent = "Couldn't save: " + msg;
+  }
+}
+async function loadCustom() {
+  try { C.rows = await api(`/api/custom?season=${S.season}`); } catch (e) { C.rows = []; }
+  renderCustom();
+}
+function renderCustom() {
+  $("#c-empty").hidden = C.rows.length > 0;
+  $("#c-wrap").hidden = C.rows.length === 0;
+  if (!C.rows.length) return;
+  const rows = C.rows.map(r => ({ ...r, stuff_plus: r.result.overall.stuff_plus, grade: r.result.overall.grade,
+    percentile: r.result.overall.percentile, fb_velo: r.pitches.find((p, i) => r.result.pitches[i]?.is_primary_fb)?.velo }));
+  renderTable($("#c-table"), [
+    { key: "name", label: "Pitcher", l: 1, cls: "name" },
+    { key: "hand", label: "Hand" },
+    { key: "fb_velo", label: "FB velo", render: r => f1(r.fb_velo) },
+    { key: "stuff_plus", label: "Stuff+", render: r => stuffCell(r.stuff_plus), defaultSort: 1 },
+    { key: "grade", label: "Grade", cls: "grade" },
+    { key: "percentile", label: "Pctl", render: r => pct(r.percentile), title: "Percentile among qualified MLB pitchers this season" },
+    { key: "arsenal", label: "Arsenal", sortVal: r => r.pitches.length, render: r => `<div class="arsenal-chips">${
+      r.result.pitches.map((p, i) => `<span title="${ptName(p.pitch_type)}: ${f0(r.pitches[i].usage)}% usage, ${f1(r.pitches[i].velo)} mph, grade ${p.grade ?? "–"}"><span class="dot" style="background:${ptColor(p.pitch_type)}"></span>${p.pitch_type} ${stuffCell(p.stuff_plus)}</span>`).join("")}</div>` },
+    { key: "updated", label: "Saved", render: r => esc((r.updated || "").slice(0, 10)) },
+    { key: "actions", label: "", sortVal: () => 0, render: r =>
+      `<button class="icon" data-open="${r.id}" title="Open in the grader" aria-label="Open in the grader">✎</button><button class="icon danger" data-delc="${r.id}" title="Delete" aria-label="Delete">✕</button>` },
+  ], rows, "custom", r => openCustom(r.id));
+  $("#c-table").querySelectorAll("[data-delc]").forEach(b => b.onclick = async e => {
+    e.stopPropagation();
+    const r = C.rows.find(x => x.id === b.dataset.delc);
+    if (!confirm(`Delete “${r.name}”?`)) return;
+    await api(`/api/custom/${r.id}`, { method: "DELETE" });
+    if (G.customId === r.id) { G.customId = null; saveG(); renderGraderInputs(); }
+    loadCustom();
+  });
+}
+function openCustom(id) {
+  const r = C.rows.find(x => x.id === id);
+  if (!r) return;
+  G.hand = r.hand; G.name = r.name; G.customId = r.id;
+  G.pitches = r.pitches.map(p => ({ ...p }));
+  $("#g-note").dataset.src = `Editing your saved pitcher “${r.name}”.`;
+  $("#g-saved").textContent = "";
+  saveG(); renderGraderInputs(); gradeNow(); switchTab("grader");
+}
+
 // ------------------------------------------------------------- tabs & boot
 function switchTab(name) {
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + name));
   if (name === "explore") renderExplore();
+  if (name === "custom") loadCustom();
   try { localStorage.setItem("stuffplus.tab", name); } catch (e) { /* ignore */ }
 }
 async function loadSeason(season) {
@@ -428,6 +499,7 @@ async function loadSeason(season) {
   renderTypeChips("x-types", typeFilter.x, renderExplore);
   renderPitchers(); renderPitches();
   if ($("#tab-explore").classList.contains("active")) renderExplore();
+  if ($("#tab-custom").classList.contains("active")) loadCustom();
   gradeNow();
 }
 async function boot() {
@@ -456,6 +528,7 @@ async function boot() {
   $("#drawer-close").onclick = closeDrawer;
   $("#drawer").onclick = e => { if (e.target.id === "drawer") closeDrawer(); };
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+  $("#c-new").onclick = () => { $("#g-reset").click(); switchTab("grader"); $("#g-name").focus(); };
   restoreG(); wireGrader(); renderGraderInputs();
   await loadSeason(m.latest_season);
   let tab = "pitchers"; try { tab = localStorage.getItem("stuffplus.tab") || tab; } catch (e) { /* ignore */ }

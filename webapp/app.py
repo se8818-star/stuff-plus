@@ -1,7 +1,11 @@
 """FastAPI backend: leaderboards and a live Stuff+ grader."""
 from __future__ import annotations
 
+import json
 import math
+import os
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -16,6 +20,7 @@ from pydantic import BaseModel, Field
 from webapp.grading import grade_arsenal
 
 STATIC = Path(__file__).parent / "static"
+CUSTOM = Path(__file__).resolve().parent.parent / "custom_pitchers.json"
 
 
 def _records(df: pd.DataFrame):
@@ -50,7 +55,14 @@ class GradeRequest(BaseModel):
     season: Optional[int] = None
 
 
-def create_app(bundle_path: Path) -> FastAPI:
+class CustomPitcher(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    hand: Literal["R", "L"] = "R"
+    pitches: list[Pitch] = Field(min_length=1, max_length=12)
+    notes: str = Field("", max_length=500)
+
+
+def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
     bundle = joblib.load(bundle_path)
     pitchers, pitch_types = bundle["pitchers"], bundle["pitch_types"]
     app = FastAPI(title="Stuff+ leaderboards")
@@ -91,6 +103,55 @@ def create_app(bundle_path: Path) -> FastAPI:
         if req.season is not None and req.season not in bundle["seasons"]:
             raise HTTPException(404, f"no season {req.season}")
         return grade_arsenal(bundle, req.hand, [p.model_dump() for p in req.pitches], req.season)
+
+    # Saved custom pitchers live in one JSON file next to the repo's code, so
+    # they survive restarts and rebuilds (gitignored; back it up if it matters).
+    def read_custom():
+        try:
+            return json.loads(Path(custom_path).read_text())
+        except FileNotFoundError:
+            return []
+
+    def write_custom(rows):
+        tmp = Path(f"{custom_path}.tmp")
+        tmp.write_text(json.dumps(rows, indent=1))
+        os.replace(tmp, custom_path)
+
+    def graded(row, season):
+        return {**row, "result": grade_arsenal(bundle, row["hand"], row["pitches"], season)}
+
+    @app.get("/api/custom")
+    def list_custom(season: Optional[int] = None):
+        if season is not None and season not in bundle["seasons"]:
+            raise HTTPException(404, f"no season {season}")
+        return [graded(r, season) for r in read_custom()]
+
+    @app.post("/api/custom")
+    def create_custom(p: CustomPitcher):
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        row = {"id": uuid.uuid4().hex[:12], **p.model_dump(), "created": now, "updated": now}
+        write_custom(read_custom() + [row])
+        return graded(row, None)
+
+    @app.put("/api/custom/{cid}")
+    def update_custom(cid: str, p: CustomPitcher):
+        rows = read_custom()
+        for i, r in enumerate(rows):
+            if r["id"] == cid:
+                rows[i] = {**r, **p.model_dump(),
+                           "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+                write_custom(rows)
+                return graded(rows[i], None)
+        raise HTTPException(404, "unknown custom pitcher")
+
+    @app.delete("/api/custom/{cid}")
+    def delete_custom(cid: str):
+        rows = read_custom()
+        keep = [r for r in rows if r["id"] != cid]
+        if len(keep) == len(rows):
+            raise HTTPException(404, "unknown custom pitcher")
+        write_custom(keep)
+        return {"deleted": cid}
 
     @app.get("/")
     def index():

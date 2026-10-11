@@ -120,3 +120,26 @@ def test_spread_rescale(bundle):
             if len(g) >= 5:
                 assert g["stuff_plus"].std(ddof=0) == pytest.approx(10)
                 assert g["stuff_plus"].mean() == pytest.approx(g["stuff_plus_model"].mean())
+
+
+def test_custom_pitchers(bundle_file, tmp_path):
+    """Saved custom pitchers persist to their JSON file and come back graded."""
+    from fastapi.testclient import TestClient
+    from webapp.app import create_app
+    store = tmp_path / "custom.json"
+    c = TestClient(create_app(bundle_file, custom_path=store))
+    assert c.get("/api/custom").json() == []
+    arsenal = [{"pitch_type": "FF", "usage": 60, "velo": 96, "spin": 2400, "ivb": 17, "hb": 8},
+               {"pitch_type": "SL", "usage": 40, "velo": 86, "spin": 2500, "ivb": 2, "hb": -4}]
+    made = c.post("/api/custom", json={"name": "Prospect A", "hand": "R", "pitches": arsenal}).json()
+    assert made["name"] == "Prospect A" and len(made["result"]["pitches"]) == 2
+    arsenal[0]["velo"] = 99
+    upd = c.put(f"/api/custom/{made['id']}", json={"name": "Prospect A", "hand": "R", "pitches": arsenal}).json()
+    assert upd["result"]["pitches"][0]["stuff_plus"] > made["result"]["pitches"][0]["stuff_plus"]
+    # a fresh app on the same file sees it (survives restarts)
+    rows = TestClient(create_app(bundle_file, custom_path=store)).get("/api/custom?season=2025").json()
+    assert [r["pitches"][0]["velo"] for r in rows] == [99]
+    assert c.post("/api/custom", json={"name": "", "pitches": arsenal}).status_code == 422
+    assert c.delete(f"/api/custom/{made['id']}").status_code == 200
+    assert c.get("/api/custom").json() == []
+    assert c.delete(f"/api/custom/{made['id']}").status_code == 404
