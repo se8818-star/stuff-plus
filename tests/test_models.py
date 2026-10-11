@@ -121,3 +121,33 @@ def test_tuning_search_space_is_regularizing_only(data):
                                {"n_estimators": 40, "learning_rate": 0.1}, early_stopping=True)
     assert loss > 0 and 1 <= trees <= 40
     assert [t[0] for t in tune.tasks_for(models.CANDIDATES["COMP"], data)] == ["swing", "whiff", "cs", "contact"]
+
+
+def test_confirmation_runs_end_to_end_and_applies_the_rule(data):
+    import confirm
+    d = pd.concat([data, data[data["year"] == 2023].assign(year=2024, game_pk=lambda x: x["game_pk"] + 1000)],
+                  ignore_index=True)
+    d["woba_denom"] = 1
+    small = {"n_estimators": 10, "learning_rate": 0.1}
+    out = confirm.run_confirmation(d, {"winner": "JGH", "params": {"A": small, "JGH": small}},
+                                   [2022], 2023, n_boot=50, log=lambda m: None)
+    assert set(out["results"]) == {"A", "JGH"} and set(out["vs_A"]) == {
+        f"{s}_{m}" for s in ("raw", "shrunk") for m in (100, 300, 500)}
+    assert out["results"]["A"]["raw_100"]["n"] == 12 and out["shrinkage"]["A"]["pitcher"]["k"] > 0
+    assert isinstance(out["verdict"]["confirmed"], bool)
+    solo = confirm.run_confirmation(d, {"winner": "A", "params": {}}, [2022], 2023, n_boot=10,
+                                    log=lambda m: None)
+    assert "verdict" not in solo and list(solo["results"]) == ["A"]
+
+
+@pytest.mark.parametrize("woba,rv,stick,want", [
+    ((0.02, 0.005), (0.02, 0.004), -0.005, True),
+    ((0.02, -0.001), (0.02, 0.004), 0.0, False),      # one CI includes 0
+    ((0.02, 0.005), (0.02, 0.004), -0.02, False),     # stickiness fell too far
+    ((-0.02, -0.03), (0.02, 0.004), 0.0, False),
+])
+def test_confirmation_rule(woba, rv, stick, want):
+    import confirm
+    vs = {"diff": {"next_woba": woba[0], "next_rv100": rv[0], "stickiness": stick},
+          "ci": {"next_woba": (woba[1], 0.1), "next_rv100": (rv[1], 0.1), "stickiness": (-0.1, 0.1)}}
+    assert confirm.verdict(vs)["confirmed"] is want
