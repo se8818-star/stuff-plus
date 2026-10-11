@@ -1,33 +1,42 @@
-# Stuff+ ablation: location-neutral 9-point VAA/HAA vs tjStuff+ v3.0
+# Stuff+ (v1.0.0)
 
-Tests whether approach angles computed on a fixed 3×3 zone grid improve on
-tjStuff+ v3.0's feature set, using his validation design on 2022–2026 data
-(the post-2023-rule-change era plus one prior season):
+A reproducible Stuff+ pipeline on 2022–2026 Statcast data, built around a
+pre-registered test of whether anything beats the tjStuff+ v3.0 feature set on
+next-season prediction. **Nothing did**, so v1.0.0 ships that feature set. See
+`MODEL_CARD.md` for the model, the validation tables and the limitations.
 
-| Fold | Train | Score | Validate against |
-|---|---|---|---|
-| 1 (default) | 2022–23 | 2024 | 2025 |
-| 2 | 2022–24 | 2025 | 2026 |
+| Split | Train | Score | Validate against | Role |
+|---|---|---|---|---|
+| Inner CV | 2022–23, by pitcher | 2022 | 2023 | development |
+| Fold 1 | 2022–23 | 2024 | 2025 | development |
+| Fold 2 | 2022–24 | 2025 | 2026 | one-shot confirmation |
 
 ## Run it
 
 ```bash
 bash setup.sh                 # .venv + pinned requirements.txt + synthetic smoke test
 source .venv/bin/activate
-pytest -q                     # physics, target mapping, feature engineering
+pytest -q
 python fetch_data.py          # 2022-2026 Statcast, cached to data/ (resumable, ~15 min)
 python data_quality.py        # reports/data_quality.md
 python baseline_checks.py     # sanity checks on the tjStuff+ v3.0 baseline
-python run_ablation.py --seeds 3 --boot 2000   # all variants, both folds
-python report_ablation.py     # reports/ablation.md
-python run_ablation.py --folds 1 --variants A_tj_v3 H_plus_ssw   # a subset
-python run_ablation.py --synthetic # smoke test, no data needed
+python develop.py             # all candidates: inner CV + fold 1 -> reports/development_stage1.md
+python confirm.py --unlock-fold2 && python report_confirmation.py   # ran once; refuses to rerun
+python final.py               # models/, leaderboards/, park check
+python run_ablation.py --synthetic   # smoke test, no data needed
 ```
 
-If LightGBM isn't installed it falls back to sklearn's histogram GBM with
-matched settings. Results land in `results/ablation_folds12.json`, together
-with the CLI arguments, model seeds, and library versions used for the run.
-Versions are pinned for Python 3.9; on Apple Silicon LightGBM needs
+`run_ablation.py` is the original feature-set ablation harness (variants A–J,
+grid variants); the pre-registered comparison lives in `models.py`,
+`develop.py` and `confirm.py`. `tune.py` implements the regularization search
+that was planned and then deliberately not run.
+
+Outputs: `leaderboards/pitchers_2026.csv`, `leaderboards/pitch_types_2026.csv`,
+`models/stuffplus_v1.0.0.json` (the `.joblib` beside it is not in git).
+
+If LightGBM isn't installed `run_ablation.py` falls back to sklearn's histogram
+GBM. Every run records its arguments, seeds and library versions under
+`results/`. Versions are pinned for Python 3.9; on Apple Silicon LightGBM needs
 `brew install libomp` (`setup.sh` does this). CI runs only `pytest` and the
 synthetic smoke test — it never downloads data.
 
@@ -42,7 +51,7 @@ synthetic smoke test — it never downloads data.
 Re-aiming a pitch at its own actual location reproduces its real VAA/HAA
 exactly, so the physics is checked against Statcast's own fit.
 
-## Variants (`features.py`)
+## Ablation variants (`features.py`, used by `run_ablation.py`)
 
 | Name | Features |
 |---|---|
