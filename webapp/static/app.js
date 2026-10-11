@@ -330,14 +330,22 @@ function loadArsenal(hand, rows) {
     spin_axis: p.spin_axis == null ? null : Math.round(p.spin_axis), arm_angle: p.arm_angle == null ? null : Math.round(p.arm_angle),
   }));
   $("#g-note").dataset.src = `Loaded from ${rows[0]?.name} (${rows[0]?.year}).`;
-  G.customId = null; G.name = "";
+  G.customId = null; G.name = ""; G.savedName = null;
   saveG(); renderGraderInputs(); gradeNow();
+}
+// A saved pitcher is open in the grader when G.customId is set. Typing a
+// different name means "this is another pitcher", so the main button then
+// saves a new one instead of overwriting the pitcher that was opened.
+const renamed = () => !!G.customId && (G.name || "").trim() !== (G.savedName ?? G.name ?? "").trim();
+function updateSaveButtons() {
+  $("#g-save").textContent = !G.customId ? "Save pitcher" : renamed() ? "Save as new pitcher" : "Save changes";
+  $("#g-save-new").hidden = !G.customId;
+  $("#g-save-new").textContent = renamed() ? `Rename “${G.savedName}”` : "Save as new";
 }
 function renderGraderInputs() {
   document.querySelectorAll("#g-hand button").forEach(b => b.classList.toggle("on", b.dataset.v === G.hand));
   $("#g-name").value = G.name || "";
-  $("#g-save").textContent = G.customId ? "Save changes" : "Save pitcher";
-  $("#g-save-new").hidden = !G.customId;
+  updateSaveButtons();
   const types = Object.keys(TEMPLATES);
   const head = `<thead><tr><th class="l">Pitch</th>${G_FIELDS.map(([, l, , , tip]) =>
     `<th title="${tip}">${l}</th>`).join("")}<th></th></tr></thead>`;
@@ -398,10 +406,12 @@ function wireGrader() {
   wireSeg("g-hand", () => { G.hand = segValue("g-hand"); saveG(); gradeNow(); });
   $("#g-add-type").innerHTML = Object.keys(TEMPLATES).map(t => `<option value="${t}">${t} · ${ptName(t)}</option>`).join("");
   $("#g-add").onclick = () => { if (G.pitches.length >= 12) return; G.pitches.push(newPitch($("#g-add-type").value)); saveG(); renderGraderInputs(); gradeNow(); };
-  $("#g-reset").onclick = () => { G.hand = "R"; G.pitches = defaultArsenal(); G.customId = null; G.name = ""; delete $("#g-note").dataset.src; saveG(); renderGraderInputs(); gradeNow(); };
-  $("#g-name").oninput = e => { G.name = e.target.value; saveG(); };
-  $("#g-save").onclick = () => saveCustom(false);
-  $("#g-save-new").onclick = () => saveCustom(true);
+  $("#g-reset").onclick = () => { G.hand = "R"; G.pitches = defaultArsenal(); G.customId = null; G.name = ""; G.savedName = null; $("#g-saved").textContent = ""; delete $("#g-note").dataset.src; saveG(); renderGraderInputs(); gradeNow(); };
+  $("#g-name").oninput = e => { G.name = e.target.value; saveG(); updateSaveButtons(); };
+  $("#g-name").onkeydown = e => { if (e.key === "Enter") $("#g-save").click(); };
+  // main button: new pitcher when unsaved or renamed; second button is the other choice
+  $("#g-save").onclick = () => saveCustom(renamed());
+  $("#g-save-new").onclick = () => saveCustom(!renamed());
   const inp = $("#g-load"), list = $("#g-load-list");
   inp.oninput = () => {
     const q = inp.value.trim().toLowerCase();
@@ -427,12 +437,15 @@ async function saveCustom(asNew) {
   const body = JSON.stringify({ name, hand: G.hand, pitches: G.pitches.map(p => ({ ...p, usage: p.usage ?? 0 })) });
   const opts = { headers: { "Content-Type": "application/json" }, body };
   try {
-    const row = G.customId && !asNew
-      ? await api(`/api/custom/${G.customId}`, { ...opts, method: "PUT" })
-      : await api("/api/custom", { ...opts, method: "POST" });
-    G.customId = row.id; saveG(); renderGraderInputs();
-    $("#g-saved").textContent = `Saved “${row.name}” to My pitchers.`;
-    loadCustom();
+    let row = null;
+    if (G.customId && !asNew) {
+      try { row = await api(`/api/custom/${G.customId}`, { ...opts, method: "PUT" }); }
+      catch (e) { if (!e.message.startsWith("404")) throw e; }  // deleted elsewhere: save it again as new
+    }
+    row ||= await api("/api/custom", { ...opts, method: "POST" });
+    G.customId = row.id; G.savedName = row.name; saveG(); renderGraderInputs();
+    await loadCustom();
+    $("#g-saved").textContent = `Saved “${row.name}”. My pitchers now has ${C.rows.length}.`;
   } catch (e) {
     let msg = e.message;
     try { msg = JSON.parse(msg.slice(msg.indexOf("{"))).detail.map(d => `${d.loc.slice(-1)[0]}: ${d.msg}`).join("; "); } catch (_) { /* raw */ }
@@ -440,11 +453,15 @@ async function saveCustom(asNew) {
   }
 }
 async function loadCustom() {
-  try { C.rows = await api(`/api/custom?season=${S.season}`); } catch (e) { C.rows = []; }
+  try { C.rows = await api(`/api/custom?season=${S.season}`); C.error = null; }
+  catch (e) { C.error = e.message; }  // keep showing the last good list
   renderCustom();
 }
 function renderCustom() {
-  $("#c-empty").hidden = C.rows.length > 0;
+  $("#c-error").hidden = !C.error;
+  $("#c-error").textContent = C.error ? `Couldn't load saved pitchers (${C.error}). Is the server still running?` : "";
+  $("#c-count").textContent = C.rows.length ? `${C.rows.length} saved` : "";
+  $("#c-empty").hidden = C.rows.length > 0 || !!C.error;
   $("#c-wrap").hidden = C.rows.length === 0;
   if (!C.rows.length) return;
   const rows = C.rows.map(r => ({ ...r, stuff_plus: r.result.overall.stuff_plus, grade: r.result.overall.grade,
@@ -462,19 +479,30 @@ function renderCustom() {
     { key: "actions", label: "", sortVal: () => 0, render: r =>
       `<button class="icon" data-open="${r.id}" title="Open in the grader" aria-label="Open in the grader">✎</button><button class="icon danger" data-delc="${r.id}" title="Delete" aria-label="Delete">✕</button>` },
   ], rows, "custom", r => openCustom(r.id));
-  $("#c-table").querySelectorAll("[data-delc]").forEach(b => b.onclick = async e => {
+}
+// One listener on the table (capture phase), so delete keeps working after the
+// table is re-sorted and the row's own click (open in grader) does not also fire.
+function wireCustom() {
+  $("#c-table").addEventListener("click", async e => {
+    const b = e.target.closest("[data-delc]"); if (!b) return;
     e.stopPropagation();
     const r = C.rows.find(x => x.id === b.dataset.delc);
-    if (!confirm(`Delete “${r.name}”?`)) return;
-    await api(`/api/custom/${r.id}`, { method: "DELETE" });
-    if (G.customId === r.id) { G.customId = null; saveG(); renderGraderInputs(); }
+    if (!r || !confirm(`Delete “${r.name}”?`)) return;
+    try { await api(`/api/custom/${r.id}`, { method: "DELETE" }); } catch (err) { /* already gone */ }
+    if (G.customId === r.id) { G.customId = null; G.savedName = null; saveG(); renderGraderInputs(); }
     loadCustom();
-  });
+  }, true);
+  // saved pitchers live on the server, so another window or browser may have
+  // changed them: refresh whenever this window is looked at again
+  const refresh = () => { if (S.season && document.visibilityState === "visible") loadCustom(); };
+  window.addEventListener("focus", refresh);
+  document.addEventListener("visibilitychange", refresh);
+  window.addEventListener("pageshow", refresh);
 }
 function openCustom(id) {
   const r = C.rows.find(x => x.id === id);
   if (!r) return;
-  G.hand = r.hand; G.name = r.name; G.customId = r.id;
+  G.hand = r.hand; G.name = r.name; G.customId = r.id; G.savedName = r.name;
   G.pitches = r.pitches.map(p => ({ ...p }));
   $("#g-note").dataset.src = `Editing your saved pitcher “${r.name}”.`;
   $("#g-saved").textContent = "";
@@ -529,7 +557,7 @@ async function boot() {
   $("#drawer").onclick = e => { if (e.target.id === "drawer") closeDrawer(); };
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
   $("#c-new").onclick = () => { $("#g-reset").click(); switchTab("grader"); $("#g-name").focus(); };
-  restoreG(); wireGrader(); renderGraderInputs();
+  restoreG(); wireGrader(); wireCustom(); renderGraderInputs();
   await loadSeason(m.latest_season);
   let tab = "pitchers"; try { tab = localStorage.getItem("stuffplus.tab") || tab; } catch (e) { /* ignore */ }
   switchTab(tab);

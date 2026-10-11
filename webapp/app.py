@@ -153,6 +153,15 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
         write_custom(keep)
         return {"deleted": cid}
 
+    # The page and its script must always match the running server, so make
+    # browsers revalidate them instead of reusing a cached copy after an update.
+    @app.middleware("http")
+    async def revalidate(request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.get("/")
     def index():
         return FileResponse(STATIC / "index.html")

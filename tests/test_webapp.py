@@ -88,6 +88,9 @@ def test_api(client, bundle):
     assert len(client.get(f"/api/pitcher/{pid}").json()["seasons"]) == 3
     assert client.get("/api/leaderboard/1999").status_code == 404
     assert client.get("/").status_code == 200
+    # page and script are always revalidated, so an update never leaves a stale script
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
 
     def grade(velo):
         body = {"hand": "R", "pitches": [
