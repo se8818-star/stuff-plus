@@ -111,3 +111,4 @@ svg .ptlabel { fill: var(--text); font-weight: 700; font-size: 11px; }
 table.inputs input[data-k=spin] { width: 66px; }
 table.inputs input::-webkit-inner-spin-button { display: none; }
 table.inputs input { -moz-appearance: textfield; }
+.note { margin: 0 0 10px; }

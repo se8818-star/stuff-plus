@@ -93,6 +93,18 @@ def synth_rows(pitches, hand, ay_coef, season=2026, arm_coef=None):
     return pd.DataFrame(rows)
 
 
+class AveragedModel:
+    """Average prediction of several fitted regressors (the frozen model is a
+    list of LightGBM fits with different seeds)."""
+
+    def __init__(self, models, features):
+        self.models, self.features = list(models), list(features)
+
+    def predict(self, X):
+        X = pd.DataFrame(X, columns=self.features) if not isinstance(X, pd.DataFrame) else X[self.features]
+        return np.mean([m.predict(X) for m in self.models], axis=0)
+
+
 def percentile(sorted_vals, x):
     if sorted_vals is None or len(sorted_vals) == 0:
         return None
@@ -100,11 +112,10 @@ def percentile(sorted_vals, x):
 
 
 def to_grade(x, mean, sd):
-    """20-80 scouting grade, rounded to the nearest 5."""
+    """20-80 scouting grade (50 + 10 z, clipped), like final.grade."""
     if mean is None or not sd:
         return None
-    g = 50 + 10 * (x - mean) / sd
-    return int(np.clip(5 * round(g / 5), 20, 80))
+    return int(round(float(np.clip(50 + 10 * (x - mean) / sd, 20, 80))))
 
 
 def grade_arsenal(bundle, hand, pitches, season=None):
@@ -113,8 +124,7 @@ def grade_arsenal(bundle, hand, pitches, season=None):
     df = synth_rows(pitches, hand, bundle["ay_coef"], season, bundle.get("arm_coef"))
     feat = add_features(df.drop(columns="_idx")).assign(_idx=df["_idx"].to_numpy())
     first = feat.drop_duplicates("_idx").sort_values("_idx")
-    X = first[bundle["features"]].to_numpy(dtype=float)
-    pred = bundle["model"].predict(X)
+    pred = bundle["model"].predict(first[bundle["features"]].astype(float))
     stuff = 100 - 10 * (pred - scale["mu"]) / scale["sd"]
 
     consts = bundle["grades"][season]

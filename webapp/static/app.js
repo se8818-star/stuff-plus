@@ -420,6 +420,7 @@ function switchTab(name) {
 }
 async function loadSeason(season) {
   S.season = season;
+  $("#season-note").textContent = S.meta.season_notes[season] || "";
   S.data = await api(`/api/leaderboard/${season}`);
   S.byPitcher = {};
   for (const p of S.data.pitch_types) (S.byPitcher[p.pitcher] ||= {})[p.pitch_type] = p;
@@ -432,7 +433,7 @@ async function loadSeason(season) {
 async function boot() {
   S.meta = await api("/api/meta");
   const m = S.meta, tr = m.train_years;
-  $("#model-info").textContent = `${m.variant} · trained ${tr[0]}–${tr[tr.length - 1]}`;
+  $("#model-info").textContent = m.label;
   $("#model-info").title = `Features: ${m.features.join(", ")}\nBuilt ${m.built_at}`;
   $("#demo-banner").hidden = !m.synthetic;
   if (m.has_roles) $("#p-role").hidden = false;

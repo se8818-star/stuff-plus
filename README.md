@@ -50,15 +50,21 @@ pip install -r requirements.txt
 python serve.py               # http://127.0.0.1:8000
 ```
 
-The first run trains a model and builds the leaderboards (`webapp/build.py`), then
-caches them in `models/stuffplus_site_<variant>.joblib`. Without `data/` it serves a
-synthetic demo (with a banner saying so). After fetching data or changing the model,
-run `python serve.py --rebuild`. Use `--variant B_plus_center` (any name from the table
-below) or `--train 2022 2023 2024 2025` to change what's trained; by default it trains
-on every season in `data/`, so those leaderboards are in-sample.
+The first run builds the leaderboards (`webapp/build.py`) and caches them in
+`models/stuffplus_site_*.joblib`; run `python serve.py --rebuild` after new data or a
+new model.
+
+- **With `data/` and the frozen model** (`models/stuffplus_v1.0.0.joblib` from
+  `final.py`): the site uses that model unchanged. 2026 shows the published
+  `leaderboards/*_2026.csv` numbers exactly (out-of-fold, shrunk); 2022–2025 are scored
+  by the same model with the same shrinkage, so they are in-sample. The grader uses the
+  model's own 2026 scaling.
+- **With `data/` only**, or with `--variant B_plus_center` / `--train 2022 2023 2024`,
+  it trains that feature-set variant instead.
+- **Without `data/`** it serves a synthetic demo, with a banner saying so.
 
 - **Pitchers**: pitcher-season Stuff+, 20-80 grade, Stuff+ per pitch type, filters
-  for hand, SP/RP (inferred from who threw first in each game), min pitches, CSV export.
+  for hand, SP/RP (same rule as `final.py`), min pitches, CSV export.
 - **Pitches**: one row per pitcher × pitch type with velo, spin, IVB/HB, extension.
 - **Explore**: scatter any two pitch characteristics, coloured by Stuff+.
 - **Grade a pitcher**: type in an arsenal (velo, spin, IVB, HB, release, extension,

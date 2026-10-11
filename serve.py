@@ -1,12 +1,14 @@
 """
 Run the local Stuff+ website:  python serve.py   ->  http://127.0.0.1:8000
 
-On first run it trains a model and builds the leaderboards (webapp/build.py):
-from data/ if you've run fetch_data.py, otherwise a synthetic demo.
+On first run it builds the leaderboards (webapp/build.py). With data/ and a
+frozen model in models/ (final.py's stuffplus_v<version>), it shows that model
+and its published leaderboards; with data/ only, it trains a variant; with
+neither, it serves a synthetic demo.
 
     python serve.py --synthetic            # force the demo data
-    python serve.py --rebuild              # retrain after new data / code changes
-    python serve.py --variant B_plus_center --train 2022 2023 2024 2025
+    python serve.py --rebuild              # rebuild after new data / code changes
+    python serve.py --variant B_plus_center --train 2022 2023 2024 2025   # train instead
 """
 import argparse
 import webbrowser
@@ -17,14 +19,15 @@ import uvicorn
 import webapp  # noqa: F401  (puts the repo root on sys.path)
 from features import VARIANTS
 from webapp.app import create_app
-from webapp.build import build, bundle_path
+from webapp.build import build, bundle_path, frozen_meta
 
 ROOT = Path(__file__).parent
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--variant", default="A_tj_v3", choices=list(VARIANTS))
+    ap.add_argument("--variant", choices=list(VARIANTS),
+                    help="train this feature-set variant instead of using the frozen model")
     ap.add_argument("--train", nargs="*", type=int, help="training seasons (default: all)")
     ap.add_argument("--synthetic", action="store_true", help="use synthetic demo data")
     ap.add_argument("--rebuild", action="store_true", help="retrain even if a model bundle exists")
@@ -40,9 +43,11 @@ def main():
         if synthetic and not a.synthetic:
             print("No data/ found: serving SYNTHETIC demo data. Run `python fetch_data.py` "
                   "then `python serve.py --rebuild` for real leaderboards.")
-        path = bundle_path(a.variant, synthetic)
+        variant = a.variant or "A_tj_v3"
+        frozen = None if (synthetic or a.variant or a.train) else frozen_meta()
+        path = bundle_path(frozen.stem if frozen else variant, synthetic)
         if a.rebuild or a.train or not path.exists():
-            path = build(a.variant, synthetic, a.train)
+            path = build(variant, synthetic, a.train, frozen=frozen)
 
     url = f"http://{a.host}:{a.port}"
     print(f"Serving {path.name} at {url}")
