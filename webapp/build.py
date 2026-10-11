@@ -97,11 +97,12 @@ def roles_by_season(df):
     return pd.DataFrame({"games": games, "gs": gs, "role": np.where(gs / games >= 0.5, "SP", "RP")})
 
 
-def shrink(raw, n, k, group=None):
-    """Empirical-Bayes shrinkage toward the (pitch-weighted) league mean, as in
-    develop.shrink: mu + n/(n+k) (raw - mu). `group` gives per-group means."""
-    w = pd.DataFrame({"r": raw * n, "n": n, "g": 0 if group is None else group})
-    mu = w.groupby("g")["r"].transform("sum") / w.groupby("g")["n"].transform("sum")
+def shrink(raw, n, k, groups):
+    """Empirical-Bayes shrinkage toward the (pitch-weighted) mean of each group,
+    as in develop.shrink: mu + n/(n+k) (raw - mu)."""
+    w = pd.DataFrame({"r": raw * n, "n": n})
+    g = w.groupby([pd.Series(x).to_numpy() for x in groups])
+    mu = g["r"].transform("sum") / g["n"].transform("sum")
     return mu + n / (n + k) * (raw - mu)
 
 
@@ -121,6 +122,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     """Train `variant` (or load the frozen model whose metadata JSON is
     `frozen`), score every season and save the website bundle."""
     t0 = time.time()
+    sys.stdout.reconfigure(line_buffering=True)  # progress shows up in redirected logs
     if synthetic:
         seasons = [2024, 2025, 2026]
         df = load_synthetic(seasons, *synth_size)
@@ -197,10 +199,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     pt["usage"] = 100 * pt["n"] / pt["n_total"]
     if k_pitcher is not None:  # shrink like the shipped leaderboards
         tot["stuff_plus_raw"], pt["stuff_plus_raw"] = tot["stuff_plus"], pt["stuff_plus"]
-        tot["stuff_plus"] = tot.groupby("year", group_keys=False).apply(
-            lambda g: shrink(g["stuff_plus"], g["n"], k_pitcher))
-        pt["stuff_plus"] = pt.groupby("year", group_keys=False).apply(
-            lambda g: shrink(g["stuff_plus"], g["n"], k_type, g["pitch_type"]))
+        tot["stuff_plus"] = shrink(tot["stuff_plus"], tot["n"], k_pitcher, [tot["year"]])
+        pt["stuff_plus"] = shrink(pt["stuff_plus"], pt["n"], k_type, [pt["year"], pt["pitch_type"]])
 
     fb = pt[pt["pitch_type"].isin(["FF", "SI", "FC"])].sort_values("n", ascending=False) \
         .drop_duplicates(keys)[keys + ["velo"]].rename(columns={"velo": "fb_velo"})
@@ -219,12 +219,17 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
             ot = pd.read_csv(ft).assign(year=y)
             cur = tot[tot["year"] == y].drop(columns=["stuff_plus", "stuff_plus_raw", "role", "games", "gs"],
                                              errors="ignore")
-            cur = cur.merge(op[keys + ["stuff_plus", "stuff_plus_raw", "grade", "role", "g", "gs"]]
-                            .rename(columns={"g": "games"}), on=keys, how="inner")
+            cur = cur.drop(columns="n").merge(
+                op[keys + ["rank", "pitches", "stuff_plus", "stuff_plus_raw", "grade", "role", "g", "gs"]]
+                .rename(columns={"g": "games", "pitches": "n"}), on=keys, how="inner")
+            cur = cur.sort_values("rank").drop(columns="rank")  # published order breaks ties
             tot = pd.concat([tot[tot["year"] != y], cur], ignore_index=True)
             curt = pt[pt["year"] == y].drop(columns=["stuff_plus", "stuff_plus_raw"], errors="ignore")
-            curt = curt.merge(ot[keys + ["pitch_type", "stuff_plus", "stuff_plus_raw", "grade"]],
+            curt = curt.merge(ot[keys + ["pitch_type", "rank_in_type", "pitches", "stuff_plus",
+                                         "stuff_plus_raw", "grade"]],
                               on=keys + ["pitch_type"], how="left")
+            curt["n"] = curt["pitches"].fillna(curt["n"]).astype(int)
+            curt = curt.sort_values(["pitch_type", "rank_in_type"]).drop(columns=["pitches", "rank_in_type"])
             pt = pd.concat([pt[pt["year"] != y], curt], ignore_index=True)
             official = {y: f"{fp.relative_to(ROOT)}, {ft.relative_to(ROOT)}"}
             print(f"  {y}: using the published leaderboards ({official[y]})")
