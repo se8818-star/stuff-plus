@@ -60,7 +60,7 @@ def create_app(bundle_path: Path) -> FastAPI:
         counts = pitch_types.groupby("pitch_type")["n"].sum().sort_values(ascending=False)
         return {
             "variant": bundle["variant"], "features": bundle["features"],
-            "label": bundle.get("label", bundle["variant"]), "frozen": bundle.get("frozen", False),
+            "label": bundle.get("label", bundle["variant"]), "spread": bundle.get("spread"), "frozen": bundle.get("frozen", False),
             "season_notes": {str(k): v for k, v in bundle.get("season_notes", {}).items()},
             "train_years": bundle["train_years"], "seasons": bundle["seasons"],
             "latest_season": bundle["latest_season"], "synthetic": bundle["synthetic"],

@@ -57,8 +57,8 @@ def test_grader_reproduces_leaderboard_features(bundle, hand):
     assert sum(p["is_primary_fb"] for p in res["pitches"]) == 1
     # grade of the average pitch should sit near the mean of the pitch grades
     board = bundle["pitchers"]
-    s = board[(board["pitcher"] == pid) & (board["year"] == bundle["latest_season"])]["stuff_plus"].iat[0]
-    assert abs(res["overall"]["stuff_plus"] - s) < 10
+    s = board[(board["pitcher"] == pid) & (board["year"] == bundle["latest_season"])]["stuff_plus_model"].iat[0]
+    assert abs(res["overall"]["stuff_plus_model"] - s) < 10
 
 
 def test_api(client, bundle):
@@ -84,3 +84,21 @@ def test_api(client, bundle):
 
     bad = client.post("/api/grade", json={"hand": "R", "pitches": [{"pitch_type": "FF", "velo": 300}]})
     assert bad.status_code == 422
+
+
+def test_spread_rescale(bundle):
+    """Displayed Stuff+ has SD 10 within each pitch type and on the pitcher
+    board (qualified rows), keeping each group's mean; grades are unchanged."""
+    from webapp.build import MIN_PITCH_GRADE, MIN_PITCHER_GRADE
+    assert bundle["spread"] == "keep"
+    for y in bundle["seasons"]:
+        p = bundle["pitchers"]
+        p = p[(p["year"] == y) & (p["n"] >= MIN_PITCHER_GRADE)]
+        assert p["stuff_plus"].std(ddof=0) == pytest.approx(10)
+        assert p["stuff_plus"].mean() == pytest.approx(p["stuff_plus_model"].mean())
+        t = bundle["pitch_types"]
+        t = t[(t["year"] == y) & (t["n"] >= MIN_PITCH_GRADE)]
+        for k, g in t.groupby("pitch_type"):
+            if len(g) >= 5:
+                assert g["stuff_plus"].std(ddof=0) == pytest.approx(10)
+                assert g["stuff_plus"].mean() == pytest.approx(g["stuff_plus_model"].mean())

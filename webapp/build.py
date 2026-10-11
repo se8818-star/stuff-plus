@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from features import VARIANTS, load  # noqa: E402
 from run_ablation import make_model  # noqa: E402
-from webapp.grading import AveragedModel, accel_to_movement  # noqa: E402
+from webapp.grading import AveragedModel, accel_to_movement, rescale  # noqa: E402
 
 MODELS = ROOT / "models"
 MIN_PITCHER_GRADE = 100   # pitchers used for overall 20-80 constants
@@ -118,9 +118,13 @@ def to_grades(x, mean, sd):
 
 
 def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
-          synth_size=(220, 500), frozen=None):
+          synth_size=(220, 500), frozen=None, spread="keep"):
     """Train `variant` (or load the frozen model whose metadata JSON is
-    `frozen`), score every season and save the website bundle."""
+    `frozen`), score every season and save the website bundle. `spread`
+    ("keep", "center" or None) rescales displayed Stuff+ so each pitch type,
+    and the pitcher board, has an SD of 10 among qualified rows each season;
+    grades and percentiles don't change, and stuff_plus_model keeps the
+    model's (or published) number."""
     t0 = time.time()
     sys.stdout.reconfigure(line_buffering=True)  # progress shows up in redirected logs
     if synthetic:
@@ -261,6 +265,15 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         keep = rows["year"].isin(official) & rows["grade"].notna() if "grade" in rows else False
         rows["grade"] = np.where(keep, rows.get("grade", g), g)
 
+    if spread:
+        for rows, which in ((tot, "pitcher"), (pt, "pitch_type")):
+            rows["stuff_plus_model"] = rows["stuff_plus"]
+            rows["stuff_plus"] = [
+                rescale(x, grades[y]["pitcher"] if which == "pitcher" else
+                        grades[y]["pitch_type"].get(t, grades[y]["all_pitches"]), spread)
+                for x, y, t in zip(rows["stuff_plus"], rows["year"],
+                                   rows["pitch_type"] if which == "pitch_type" else [None] * len(rows))]
+
     notes = {}
     for y in scale:
         if y in official:
@@ -282,7 +295,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         "train_years": list(train), "seasons": [int(s) for s in scale], "season_notes": notes,
         "latest_season": int(max(scale)), "scale": scale, "ay_coef": ay_coef,
         "arm_coef": arm_coef, "grades": grades, "percentiles": pct,
-        "pitchers": tot, "pitch_types": pt, "synthetic": synthetic, "seed": seed,
+        "pitchers": tot, "pitch_types": pt, "synthetic": synthetic, "seed": seed, "spread": spread,
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "versions": {"python": platform.python_version(), "pandas": pd.__version__,
                      "numpy": np.__version__, "sklearn": sklearn.__version__,
@@ -301,11 +314,14 @@ def main():
     ap.add_argument("--train", nargs="*", type=int, help="training seasons (default: all)")
     ap.add_argument("--synthetic", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--spread", default="keep", choices=["keep", "center", "none"],
+                    help="SD-10 display scale: keep pitch-type means, center them at 100, or none")
     ap.add_argument("--retrain", action="store_true",
                     help="train --variant even when a frozen model exists in models/")
     a = ap.parse_args()
     frozen = None if (a.synthetic or a.retrain) else frozen_meta()
-    build(a.variant, a.synthetic, a.train, a.seed, frozen=frozen)
+    build(a.variant, a.synthetic, a.train, a.seed, frozen=frozen,
+          spread=None if a.spread == "none" else a.spread)
 
 
 if __name__ == "__main__":

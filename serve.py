@@ -32,6 +32,9 @@ def main():
     ap.add_argument("--synthetic", action="store_true", help="use synthetic demo data")
     ap.add_argument("--rebuild", action="store_true", help="retrain even if a model bundle exists")
     ap.add_argument("--bundle", type=Path, help="serve a specific models/*.joblib bundle")
+    ap.add_argument("--spread", default="keep", choices=["keep", "center", "none"],
+                    help="show Stuff+ with an SD of 10 per pitch type (keep type means / center at 100) "
+                         "or exactly as the model outputs it (none); needs --rebuild to change")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--no-browser", action="store_true")
@@ -47,7 +50,8 @@ def main():
         frozen = None if (synthetic or a.variant or a.train) else frozen_meta()
         path = bundle_path(frozen.stem if frozen else variant, synthetic)
         if a.rebuild or a.train or not path.exists():
-            path = build(variant, synthetic, a.train, frozen=frozen)
+            path = build(variant, synthetic, a.train, frozen=frozen,
+                         spread=None if a.spread == "none" else a.spread)
 
     url = f"http://{a.host}:{a.port}"
     print(f"Serving {path.name} at {url}")

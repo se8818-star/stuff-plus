@@ -63,6 +63,12 @@ new model.
   it trains that feature-set variant instead.
 - **Without `data/`** it serves a synthetic demo, with a banner saying so.
 
+Displayed Stuff+ is stretched so each pitch type, and the pitcher board, has an SD of 10
+among qualified rows each season (min 100 pitches for pitchers, 50 for pitch types), keeping
+each group's own mean. Grades and percentiles are unchanged, and `stuff_plus_model` in the
+API keeps the model's / published number. `python serve.py --rebuild --spread none` shows
+the raw numbers instead; `--spread center` centres every pitch type at 100.
+
 - **Pitchers**: pitcher-season Stuff+, 20-80 grade, Stuff+ per pitch type, filters
   for hand, SP/RP (same rule as `final.py`), min pitches, CSV export.
 - **Pitches**: one row per pitcher × pitch type with velo, spin, IVB/HB, extension.

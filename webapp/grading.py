@@ -118,6 +118,14 @@ def to_grade(x, mean, sd):
     return int(round(float(np.clip(50 + 10 * (x - mean) / sd, 20, 80))))
 
 
+def rescale(x, c, spread):
+    """Display scale: stretch so the qualified group (constants `c`) has an SD
+    of 10. "keep" keeps the group's own mean, "center" moves it to 100."""
+    if not spread or not c.get("sd"):
+        return x
+    return (c["mean"] if spread == "keep" else 100.0) + 10 * (x - c["mean"]) / c["sd"]
+
+
 def grade_arsenal(bundle, hand, pitches, season=None):
     season = season or bundle["latest_season"]
     scale = bundle["scale"][season]
@@ -134,7 +142,8 @@ def grade_arsenal(bundle, hand, pitches, season=None):
         c = consts["pitch_type"].get(pt) or consts["all_pitches"]
         out.append({
             "pitch_type": pt,
-            "stuff_plus": float(s),
+            "stuff_plus": float(rescale(s, c, bundle.get("spread"))),
+            "stuff_plus_model": float(s),
             "grade": to_grade(s, c["mean"], c["sd"]),
             "percentile": percentile(bundle["percentiles"][season]["pitch_type"].get(pt), s),
             "is_primary_fb": bool(np.isclose(r["fb_speed"], r["start_speed"])
@@ -149,7 +158,8 @@ def grade_arsenal(bundle, hand, pitches, season=None):
         "season_scale": season,
         "pitches": out,
         "overall": {
-            "stuff_plus": overall,
+            "stuff_plus": float(rescale(overall, pc, bundle.get("spread"))),
+            "stuff_plus_model": overall,
             "grade": to_grade(overall, pc["mean"], pc["sd"]),
             "percentile": percentile(bundle["percentiles"][season]["pitcher"], overall),
         },
