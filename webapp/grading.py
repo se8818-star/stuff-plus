@@ -126,13 +126,54 @@ def rescale(x, c, spread):
     return (c["mean"] if spread == "keep" else 100.0) + 10 * (x - c["mean"]) / c["sd"]
 
 
+# Typical pitch-to-pitch spread around a pitcher's own average for one pitch
+# type (median within-pitcher SD, 2025 Statcast, pitch types with 100+ thrown).
+SCATTER = {"velo": 1.15, "ivb": 2.2, "hb": 2.2}   # mph, in, in
+N_SIM = 300
+
+
+def simulate_pitches(pitches, n=N_SIM, seed=0):
+    """Expand an arsenal into about `n` individual pitches, split by usage,
+    each pitch type scattered around the entered values. The scatter is
+    centred, so every pitch type's average stays exactly what was entered,
+    and seeded, so the same inputs always give the same grade. Returns the
+    pitches (usage 1 each) and the index of the entered pitch each came from."""
+    rng = np.random.default_rng(seed)
+    w = np.array([max(float(p.get("usage") or 0), 0) for p in pitches])
+    w = w / w.sum() if w.sum() > 0 else np.full(len(pitches), 1 / len(pitches))
+    # enough pitches that the rarest pitch type still gets a usable sample
+    # without changing which fastball is the most used
+    if (w > 0).any():
+        n = int(min(max(n, 20 / w[w > 0].min()), 3000))
+    sim, idx = [], []
+    for i, p in enumerate(pitches):
+        k = max(20, int(round(n * w[i])))
+        z = rng.standard_normal((k, len(SCATTER)))
+        z = (z - z.mean(axis=0)) / z.std(axis=0)
+        for row in z:
+            q = dict(p, usage=1)
+            for key, zz in zip(SCATTER, row):
+                q[key] = float(p[key]) + SCATTER[key] * zz
+            sim.append(q)
+            idx.append(i)
+    return sim, np.array(idx)
+
+
 def grade_arsenal(bundle, hand, pitches, season=None):
     season = season or bundle["latest_season"]
     scale = bundle["scale"][season]
     df = synth_rows(pitches, hand, bundle["ay_coef"], season, bundle.get("arm_coef"))
     feat = add_features(df.drop(columns="_idx")).assign(_idx=df["_idx"].to_numpy())
     first = feat.drop_duplicates("_idx").sort_values("_idx")
-    pred = bundle["model"].predict(first[bundle["features"]].astype(float))
+    # Score a simulated sample of each pitch, not the one average pitch: the
+    # model was trained on real pitches, which always vary around a pitcher's
+    # average, and it has no sensible answer for a fastball that is identical
+    # every time (ax_diff exactly 0 only happens for one-pitch junk samples).
+    sim, idx = simulate_pitches(pitches)
+    sdf = synth_rows(sim, hand, bundle["ay_coef"], season, bundle.get("arm_coef"))
+    sfeat = add_features(sdf.drop(columns="_idx"))
+    pred = bundle["model"].predict(sfeat[bundle["features"]].astype(float))
+    pred = pd.Series(pred).groupby(idx).mean().reindex(range(len(pitches))).to_numpy()
     stuff = 100 - 10 * (pred - scale["mu"]) / scale["sd"]
 
     consts = bundle["grades"][season]

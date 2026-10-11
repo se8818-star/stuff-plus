@@ -36,6 +36,24 @@ def test_movement_round_trip():
     assert hb[0] > 0 > hb[1]  # negative mirrored ax = arm side
 
 
+def test_simulated_pitches_keep_entered_averages():
+    """The grader scores a scattered sample of each pitch; the sample's
+    averages are exactly what was entered, it is never one identical pitch
+    repeated, and it is deterministic."""
+    from webapp.grading import SCATTER, simulate_pitches
+    arsenal = [{"pitch_type": "FF", "usage": 60, "velo": 95.0, "ivb": 16.0, "hb": 8.0},
+               {"pitch_type": "SL", "usage": 38, "velo": 86.0, "ivb": 2.0, "hb": -4.0},
+               {"pitch_type": "CH", "usage": 2, "velo": 87.0, "ivb": 6.0, "hb": 14.0}]
+    sim, idx = simulate_pitches(arsenal)
+    counts = np.bincount(idx)
+    assert counts.min() >= 20 and counts[0] > counts[1] > counts[2]
+    for i, p in enumerate(arsenal):
+        for k, sd in SCATTER.items():
+            v = np.array([q[k] for q, j in zip(sim, idx) if j == i])
+            assert v.mean() == pytest.approx(p[k]) and v.std() == pytest.approx(sd)
+    assert simulate_pitches(arsenal)[0] == sim
+
+
 @pytest.mark.parametrize("hand", ["R", "L"])
 def test_grader_reproduces_leaderboard_features(bundle, hand):
     """An arsenal loaded from the leaderboard turns back into the same model inputs."""
