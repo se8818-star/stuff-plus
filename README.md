@@ -79,7 +79,7 @@ the raw numbers instead; `--spread center` centres every pitch type at 100.
 
 The grader builds Statcast-shaped rows from the inputs and runs them through
 `features.add_features`, so it uses exactly the same features as the model. Movement
-uses Savant conventions (inches, y = 40 ft to the plate, HB positive to the arm side).
+uses Savant conventions (inches, y = 50 ft to the plate, matching Statcast pfx, HB positive to the arm side).
 A pitch's grade is the model's grade for the *average* pitch you describe, which can
 differ slightly from a leaderboard number (the mean of every individual pitch's grade).
 

@@ -9,7 +9,8 @@ zone) and runs them through features.add_features, exactly like real pitches.
 Movement inputs follow Baseball Savant conventions:
   IVB  induced vertical break, inches (+ = rise vs. a spinless pitch)
   HB   horizontal break, inches, + = pitcher's arm side (mirrored for LHP)
-measured from y = 40 ft to the front of the plate. The leaderboards compute
+measured from y = 50 ft to the tip of the plate (y = 0), the window that
+reproduces Statcast's pfx_x / pfx_z. The leaderboards compute
 displayed movement with the same functions, so a leaderboard arsenal loaded
 into the grader reproduces its accelerations exactly.
 """
@@ -23,15 +24,14 @@ from physics import Y50, Y_PLATE, _time_to_y
 
 G = 32.174           # ft/s^2
 MPH = 5280 / 3600    # ft/s per mph
-Y40 = 40.0
 
 
 def _movement_time(speed, ext, ay):
-    """Flight time (s) from y = 40 ft to the plate for a pitch released at
+    """Flight time (s) from y = 50 ft to y = 0 for a pitch released at
     `speed` mph with constant y-acceleration `ay`."""
     y_r = 60.5 - np.asarray(ext, float)
     vy_r = -np.asarray(speed, float) * MPH
-    return _time_to_y(y_r, vy_r, ay, Y_PLATE) - _time_to_y(y_r, vy_r, ay, Y40)
+    return _time_to_y(y_r, vy_r, ay, 0.0) - _time_to_y(y_r, vy_r, ay, Y50)
 
 
 def accel_to_movement(az, ax_arm, speed, ext, ay):
