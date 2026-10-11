@@ -136,6 +136,33 @@ be detected in one validation season. The tests here show that none of the
 alternatives is clearly better. They do not show the alternatives are worse or
 equivalent.
 
+### Overfitting check
+
+`overfit_check.py` trains on 2022–23 and compares scores for the training
+pitches (in-sample) with scores for the same pitches from a model that never
+saw that pitcher (out-of-pitcher), and with later seasons.
+
+| | In-sample | Out-of-pitcher | 2024 | 2025 |
+|---|---:|---:|---:|---:|
+| Pitch-level R² | 0.0045 | 0.0007 | 0.0007 | 0.0007 |
+| 2023 Stuff+ vs same-season RV/100 | 0.437 | 0.277 | | |
+| 2023 Stuff+ vs 2024 RV/100 | 0.299 | 0.193 | | |
+
+- The model **does memorise the pitchers it trains on**: in-sample pitch-level
+  fit is about seven times the out-of-sample fit, and in-sample Stuff+ tracks a
+  pitcher's own same-season results much more closely (0.44 against 0.28).
+  In-sample scores are therefore inflated and are not used anywhere in the
+  validation tables or leaderboards.
+- Out-of-sample fit is stable: R² is the same for unseen pitchers and for the
+  next two seasons, so nothing degrades over time.
+- Memorised pitchers are predicted **better** the following season (0.30
+  against 0.19), because a pitcher's past results carry real information
+  (command, deception) that the ten physical inputs do not. A score for a
+  pitcher the model has trained on is therefore partly a record of how that
+  pitcher has performed, not purely a grade of the pitch's physical traits.
+  The next-season validation tables above are of this kind, since most
+  pitchers in the scored season were also in the training seasons.
+
 ## 2026 outputs
 
 - `leaderboards/pitchers_2026.csv`: 720 pitchers with at least 100 pitches.
@@ -218,9 +245,12 @@ adjusted. All parks: `reports/park_check_2026.csv`,
 - **Small samples at the top.** A 100-pitch minimum admits pitchers with a
   handful of outings; the 2026 number one has 103 pitches. Shrinkage moves such
   scores by only a point or two. Filter on `pitches` for a stricter board.
-- **In-sample caution.** The saved model was trained on 2026. Use it to score
-  new pitches, not to re-score 2022–2026 pitchers; the leaderboards use
-  out-of-fold scores for that reason.
+- **Memorisation of known pitchers.** The model fits its training pitchers
+  about seven times better than unseen ones (see the overfitting check). The
+  saved model was trained on every 2022–2026 pitcher, so its score for a
+  returning pitcher partly reflects that pitcher's past results; the
+  leaderboards use out-of-fold scores to avoid this. Scores from the saved
+  model and from the leaderboards are not interchangeable.
 - **Predictive power is modest.** Correlation with next-season wOBA is 0.22–0.35
   depending on the pitch minimum. Stuff+ is one input, not a projection.
 

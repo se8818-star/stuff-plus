@@ -2,6 +2,7 @@
 Phase 4: train the shipped model on 2022-2026 and produce the 2026 outputs.
 
     python final.py            # fits, saves models/, writes leaderboards/ and reports/
+    python final.py --model S6 # the six-variable comparison model, files suffixed _s6
 
 The shipped model is A (tjStuff+ v3.0 feature set, TJ's LightGBM settings, 3
 seeds averaged); see reports/confirmation.md for why. Leaderboard scores are
@@ -21,7 +22,7 @@ from sklearn.model_selection import GroupKFold
 import run_ablation as ra
 from develop import pitcher_table, shrink, split_half_k, stuff_plus
 from features import load
-from models import CANDIDATES, SEEDS, TJ_PARAMS, add_outcome_flags, fit_predict
+from models import AMENDED, CANDIDATES, SEEDS, TJ_PARAMS, add_outcome_flags, fit_predict
 
 HERE = Path(__file__).parent
 VERSION = "1.0.0"
@@ -73,10 +74,14 @@ def park_check(df, s, min_n=PARK_MIN):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--params", help="JSON of LightGBM overrides (testing only)")
+    ap.add_argument("--model", default=MODEL, choices=[MODEL, "S6"],
+                    help="A is the shipped model; S6 is the six-variable comparison model")
     args = ap.parse_args()
+    primary = args.model == MODEL
+    sfx = "" if primary else f"_{args.model.lower()}"
     params = json.loads(args.params) if args.params else None
     t0 = time.time()
-    spec = CANDIDATES[MODEL]
+    spec = {**CANDIDATES, **AMENDED}[args.model]
     feats = spec["features"]
     df = add_outcome_flags(load(HERE / "data", YEARS))
     df = df[df["target"].notna()].reset_index(drop=True)
@@ -107,17 +112,20 @@ def main():
              "oof_xrv_mean": float(np.nanmean(oof[cur])), "oof_xrv_sd": float(np.nanstd(oof[cur]))}
 
     (HERE / "models").mkdir(exist_ok=True)
-    tag = f"stuffplus_v{VERSION}"
+    tag = f"stuffplus{sfx}_v{VERSION}"
     joblib.dump(models, HERE / "models" / f"{tag}.joblib")
     meta = {
-        "name": "stuffplus", "version": VERSION, "model": MODEL, "features": feats, "target": spec["target"],
+        "name": f"stuffplus{sfx}", "version": VERSION, "model": args.model,
+        "status": "shipped model" if primary else
+                  "comparison model: not confirmed better than the shipped model (reports/confirmation.md)", "features": feats, "target": spec["target"],
         "lightgbm_params": {**TJ_PARAMS, **(params or {})}, "seeds": list(SEEDS),
         "train_years": YEARS, "n_train": int(len(tr)),
         "scaling": {**scale, "season": SEASON,
                     "formula": "stuff_plus = 100 - 10 * (xRV - model_xrv_mean) / model_xrv_sd"},
         "shrinkage": {"pitcher_k": k_p, "pitch_type_k": k_pt,
                       "formula": "league_mean + n / (n + k) * (raw_mean - league_mean)"},
-        "feature_notes": {"ax, x0": "mirrored so both hands share a frame (see features.add_features)",
+        "feature_notes": {"ax, x0, haa_ln": "mirrored so both hands share a frame (see features.add_features)",
+                          "vaa_ln, haa_ln": "approach angles re-aimed at the centre of the zone (physics.py)",
                           "*_diff": "difference from the pitcher-season's primary fastball (FF/SI/FC by usage)"},
         "artifact": f"models/{tag}.joblib (list of {len(SEEDS)} LGBMRegressor; average their predictions)",
         "env": ra.env_info()}
@@ -143,7 +151,7 @@ def main():
             "stuff_plus", "stuff_plus_raw", "grade", "grade_in_role"]
     out = HERE / "leaderboards"
     out.mkdir(exist_ok=True)
-    q[cols].round({"velo": 1, "stuff_plus": 1, "stuff_plus_raw": 1}).to_csv(out / f"pitchers_{SEASON}.csv", index=False)
+    q[cols].round({"velo": 1, "stuff_plus": 1, "stuff_plus_raw": 1}).to_csv(out / f"pitchers_{SEASON}{sfx}.csv", index=False)
 
     pt = pitcher_table(d, d["s"].to_numpy(), ("pitcher", "pitch_type"))
     pt["stuff_plus"] = shrink(pt, k_pt["k"], "pitch_type")["mean"]
@@ -159,7 +167,7 @@ def main():
     qt[["pitch_type", "rank_in_type", "pitcher", "player_name", "p_throws", "role", "pitches", "usage_pct",
         "velo", "stuff_plus", "stuff_plus_raw", "grade"]].round(
         {"usage_pct": 1, "velo": 1, "stuff_plus": 1, "stuff_plus_raw": 1}).to_csv(
-        out / f"pitch_types_{SEASON}.csv", index=False)
+        out / f"pitch_types_{SEASON}{sfx}.csv", index=False)
 
     # 4. checks that go in the model card
     sp_rp = q.groupby("role").apply(lambda x: pd.Series({
@@ -172,13 +180,13 @@ def main():
     parks = park_check(d, d["s"].to_numpy())
     all_s = stuff_plus(oof, oof[cur])
     parks_all = park_check(df, all_s)
-    parks.round(3).to_csv(HERE / "reports" / f"park_check_{SEASON}.csv")
-    parks_all.round(3).to_csv(HERE / "reports" / "park_check_2022_2026.csv")
+    parks.round(3).to_csv(HERE / "reports" / f"park_check_{SEASON}{sfx}.csv")
+    parks_all.round(3).to_csv(HERE / "reports" / f"park_check_2022_2026{sfx}.csv")
     pm = pitcher_table(d, d["s_model"].to_numpy())["mean"]
     both = pit.join(pm.rename("in_sample"))
     both = both[both["pitches"] >= MIN_PITCHER]
     summary = {
-        "version": VERSION, "season": SEASON, "min_pitcher": MIN_PITCHER, "min_pitch_type": MIN_PITCH_TYPE,
+        "version": VERSION, "model": args.model, "season": SEASON, "min_pitcher": MIN_PITCHER, "min_pitch_type": MIN_PITCH_TYPE,
         "qualified_pitchers": len(q), "qualified_pitch_types": len(qt),
         "scaling": scale, "shrinkage": {"pitcher": k_p, "pitch_type": k_pt},
         "pitcher_stuff_plus_sd": float(q["stuff_plus"].std()),
@@ -190,7 +198,7 @@ def main():
         "league_stuff_plus_by_year": {int(y): float(np.nanmean(all_s[(df["year"] == y).to_numpy()])) for y in YEARS},
         "env": ra.env_info(), "seconds": time.time() - t0}
     (HERE / "results").mkdir(exist_ok=True)
-    (HERE / "results" / "final_summary.json").write_text(json.dumps(summary, indent=1, default=float))
+    (HERE / "results" / f"final_summary{sfx}.json").write_text(json.dumps(summary, indent=1, default=float))
     print(json.dumps({k: summary[k] for k in ("qualified_pitchers", "scaling", "oof_vs_in_sample_r", "sp_rp")},
                      indent=1, default=float))
     print(f"done ({time.time() - t0:.0f}s)")
