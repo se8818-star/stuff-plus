@@ -43,6 +43,56 @@ GBM. Every run records its arguments, seeds and library versions under
 `brew install libomp` (`setup.sh` does this). CI runs only `pytest` and the
 synthetic smoke test — it never downloads data.
 
+## Leaderboard website
+
+```bash
+pip install -r requirements.txt
+python serve.py               # http://127.0.0.1:8000
+```
+
+The first run builds the leaderboards (`webapp/build.py`) and caches them in
+`models/stuffplus_site_*.joblib`; run `python serve.py --rebuild` after new data or a
+new model.
+
+- **With `data/` and the frozen model** (`models/stuffplus_v1.0.0.joblib` from
+  `final.py`): 2026 shows the published `leaderboards/*_2026.csv` numbers exactly
+  (out-of-fold, shrunk). Run `python -m webapp.folds` once first: it refits and saves
+  `final.py`'s five out-of-fold models (same folds, pitches, settings and seeds; it
+  checks that they reproduce the published leaderboard), and the site then scores
+  2022–2025 out-of-fold with the same shrinkage, and grades with them too. Without that
+  file the site falls back to the full model, which is in-sample for every season it
+  was trained on and has memorised those pitchers' results (see `MODEL_CARD.md`).
+- **With `data/` only**, or with `--variant B_plus_center` / `--train 2022 2023 2024`,
+  it trains that feature-set variant instead.
+- **Without `data/`** it serves a synthetic demo, with a banner saying so.
+
+Displayed Stuff+ is stretched so each pitch type, and the pitcher board, has an SD of 10
+among qualified rows each season (min 100 pitches for pitchers, 50 for pitch types), keeping
+each group's own mean. Grades and percentiles are unchanged, and `stuff_plus_model` in the
+API keeps the model's / published number. `python serve.py --rebuild --spread none` shows
+the raw numbers instead; `--spread center` centres every pitch type at 100.
+
+- **Pitchers**: pitcher-season Stuff+, 20-80 grade, Stuff+ per pitch type, filters
+  for hand, SP/RP (same rule as `final.py`), min pitches, CSV export.
+- **Pitches**: one row per pitcher × pitch type with velo, spin, IVB/HB, extension.
+- **Explore**: scatter any two pitch characteristics, coloured by Stuff+.
+- **Grade a pitcher**: type in an arsenal (velo, spin, IVB, HB, release, extension,
+  usage) and get Stuff+, a 20-80 grade, and a percentile per pitch as you type. You can
+  start from any MLB pitcher's arsenal and tweak it.
+- **My pitchers**: name an arsenal in the grader and save it. Saved pitchers are listed
+  with their live Stuff+, grade, percentile and per-pitch scores, and open back in the
+  grader for editing. They're stored in `custom_pitchers.json` at the repo root
+  (gitignored), so they survive restarts and rebuilds.
+
+The grader builds Statcast-shaped rows from the inputs and runs them through
+`features.add_features`, so it uses exactly the same features as the model. An arsenal
+loaded from an MLB pitcher (and a saved pitcher started from one) is scored by the fold
+model that never saw him, like his leaderboard number; anything else by the average of
+the five fold models. Movement
+uses Savant conventions (inches, y = 50 ft to the plate, matching Statcast pfx, HB positive to the arm side).
+A pitch's grade is the model's grade for the *average* pitch you describe, which can
+differ slightly from a leaderboard number (the mean of every individual pitch's grade).
+
 ## How the 9-point angles work (`physics.py`)
 
 1. Rewind Statcast's 9-parameter fit to the release plane (60.5 − extension).
