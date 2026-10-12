@@ -159,8 +159,18 @@ def simulate_pitches(pitches, n=N_SIM, seed=0):
     return sim, np.array(idx)
 
 
-def grade_arsenal(bundle, hand, pitches, season=None):
+def pick_model(bundle, pitcher=None):
+    """The model to grade with, and its fold. An arsenal taken from an MLB
+    pitcher is scored by the fold model that never saw him, as on the
+    leaderboard; anything else by the bundle's model (with fold models, the
+    average of all of them)."""
+    k = bundle.get("pitcher_fold", {}).get(pitcher) if pitcher is not None else None
+    return (bundle["model"], None) if k is None else (bundle["folds"][k], k)
+
+
+def grade_arsenal(bundle, hand, pitches, season=None, pitcher=None):
     season = season or bundle["latest_season"]
+    model, fold = pick_model(bundle, pitcher)
     scale = bundle["scale"][season]
     df = synth_rows(pitches, hand, bundle["ay_coef"], season, bundle.get("arm_coef"))
     feat = add_features(df.drop(columns="_idx")).assign(_idx=df["_idx"].to_numpy())
@@ -172,7 +182,7 @@ def grade_arsenal(bundle, hand, pitches, season=None):
     sim, idx = simulate_pitches(pitches)
     sdf = synth_rows(sim, hand, bundle["ay_coef"], season, bundle.get("arm_coef"))
     sfeat = add_features(sdf.drop(columns="_idx"))
-    pred = bundle["model"].predict(sfeat[bundle["features"]].astype(float))
+    pred = model.predict(sfeat[bundle["features"]].astype(float))
     pred = pd.Series(pred).groupby(idx).mean().reindex(range(len(pitches))).to_numpy()
     stuff = 100 - 10 * (pred - scale["mu"]) / scale["sd"]
 
@@ -197,6 +207,8 @@ def grade_arsenal(bundle, hand, pitches, season=None):
     pc = consts["pitcher"]
     return {
         "season_scale": season,
+        "model": {"out_of_fold": bool(bundle.get("folds")), "fold": fold,
+                  "pitcher": pitcher if fold is not None else None},
         "pitches": out,
         "overall": {
             "stuff_plus": float(rescale(overall, pc, bundle.get("spread"))),

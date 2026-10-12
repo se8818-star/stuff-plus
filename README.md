@@ -55,10 +55,13 @@ The first run builds the leaderboards (`webapp/build.py`) and caches them in
 new model.
 
 - **With `data/` and the frozen model** (`models/stuffplus_v1.0.0.joblib` from
-  `final.py`): the site uses that model unchanged. 2026 shows the published
-  `leaderboards/*_2026.csv` numbers exactly (out-of-fold, shrunk); 2022–2025 are scored
-  by the same model with the same shrinkage, so they are in-sample. The grader uses the
-  model's own 2026 scaling.
+  `final.py`): 2026 shows the published `leaderboards/*_2026.csv` numbers exactly
+  (out-of-fold, shrunk). Run `python -m webapp.folds` once first: it refits and saves
+  `final.py`'s five out-of-fold models (same folds, pitches, settings and seeds; it
+  checks that they reproduce the published leaderboard), and the site then scores
+  2022–2025 out-of-fold with the same shrinkage, and grades with them too. Without that
+  file the site falls back to the full model, which is in-sample for every season it
+  was trained on and has memorised those pitchers' results (see `MODEL_CARD.md`).
 - **With `data/` only**, or with `--variant B_plus_center` / `--train 2022 2023 2024`,
   it trains that feature-set variant instead.
 - **Without `data/`** it serves a synthetic demo, with a banner saying so.
@@ -82,7 +85,10 @@ the raw numbers instead; `--spread center` centres every pitch type at 100.
   (gitignored), so they survive restarts and rebuilds.
 
 The grader builds Statcast-shaped rows from the inputs and runs them through
-`features.add_features`, so it uses exactly the same features as the model. Movement
+`features.add_features`, so it uses exactly the same features as the model. An arsenal
+loaded from an MLB pitcher (and a saved pitcher started from one) is scored by the fold
+model that never saw him, like his leaderboard number; anything else by the average of
+the five fold models. Movement
 uses Savant conventions (inches, y = 50 ft to the plate, matching Statcast pfx, HB positive to the arm side).
 A pitch's grade is the model's grade for the *average* pitch you describe, which can
 differ slightly from a leaderboard number (the mean of every individual pitch's grade).

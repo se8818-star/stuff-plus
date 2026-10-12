@@ -5,12 +5,16 @@ Train a Stuff+ model and precompute everything the website shows.
     python -m webapp.build --synthetic           # demo bundle, no data needed
     python -m webapp.build --variant B_plus_center --train 2022 2023 2024 2025
 
-Trains one feature-set variant from features.py with run_ablation.py's model
-settings, scores every season, and writes a single joblib bundle under
-models/ (gitignored) with the model, scaling constants, leaderboards, and
-20-80 grade constants. The existing ablation code is imported, not changed.
+Uses the frozen model from final.py when there is one, otherwise trains one
+feature-set variant from features.py with run_ablation.py's model settings;
+scores every season, and writes a single joblib bundle under models/
+(gitignored) with the model, scaling constants, leaderboards, and 20-80 grade
+constants. The existing ablation code is imported, not changed.
 
-Leaderboards for seasons inside the training window are in-sample.
+With the frozen model's fold models (python -m webapp.folds), and always for
+the synthetic demo, every season is scored out-of-fold like the published
+leaderboard: each pitcher by a model that never saw his pitches. Otherwise
+seasons inside the training window are in-sample.
 """
 from __future__ import annotations
 
@@ -31,6 +35,7 @@ sys.path.insert(0, str(ROOT))
 
 from features import VARIANTS, load  # noqa: E402
 from run_ablation import make_model  # noqa: E402
+from webapp.folds import fit_folds, folds_path, oof_predict  # noqa: E402
 from webapp.grading import AveragedModel, accel_to_movement, rescale  # noqa: E402
 
 MODELS = ROOT / "models"
@@ -138,15 +143,29 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         df = load_real(seasons)
     print(f"loaded {len(df):,} pitches ({seasons[0]}-{seasons[-1]}) in {time.time()-t0:.0f}s")
 
-    meta, official = None, {}
+    meta, official, folds, pitcher_fold = None, {}, None, {}
     if frozen:
         meta = json.loads(Path(frozen).read_text())
         feats, train = meta["features"], meta["train_years"]
-        model = AveragedModel(joblib.load(Path(frozen).with_suffix(".joblib")), feats)
-        label = f"stuffplus v{meta['version']} (frozen model {meta['model']})"
         k_pitcher = meta["shrinkage"]["pitcher_k"]["k"]
         k_type = meta["shrinkage"]["pitch_type_k"]["k"]
-        print(f"using {label}: {Path(frozen).name}")
+        fp = folds_path(frozen)
+        label = f"stuffplus v{meta['version']} (frozen model {meta['model']}{', out-of-fold' if fp.exists() else ''})"
+        if fp.exists():
+            fb = joblib.load(fp)
+            models, pitcher_fold = fb["models"], fb["pitcher_fold"]
+            print(f"using {label}: {fp.name}; check against the published leaderboard: {fb['check']}")
+        else:
+            model = AveragedModel(joblib.load(Path(frozen).with_suffix(".joblib")), feats)
+            print(f"using {label}: {Path(frozen).name}. No {fp.name}, so the grader and the seasons "
+                  "before the published one use this full model (in-sample); "
+                  "run `python -m webapp.folds` to score them out-of-fold.")
+    elif synthetic and not train:
+        feats, train = VARIANTS[variant], seasons
+        label = f"{variant} · out-of-fold"
+        k_pitcher = k_type = None
+        print(f"training {variant} out-of-fold ({len(feats)} features) ...")
+        models, pitcher_fold = fit_folds(df[df["target"].notna()], feats, "target", make_model, [seed])
     else:
         feats = VARIANTS[variant]
         train = train or seasons
@@ -158,13 +177,18 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         model = AveragedModel([make_model(seed).fit(tr[feats], tr["target"].to_numpy())], feats)
         print(f"  trained in {time.time()-t1:.0f}s")
 
+    if pitcher_fold:
+        # the grader's model for new arsenals: all fold models averaged
+        folds = [AveragedModel(ms, feats) for ms in models]
+        model = AveragedModel([m for ms in models for m in ms], feats)
     sc = df.dropna(subset=feats).copy()
-    sc["pred"] = model.predict(sc[feats])
+    sc["pred"] = (oof_predict(folds, pitcher_fold, sc[feats], sc["pitcher"], model) if folds
+                  else model.predict(sc[feats]))
     scale = {int(y): {"mu": float(g["pred"].mean()), "sd": float(g["pred"].std(ddof=0))}
              for y, g in sc.groupby("year")}
     if meta:  # the frozen model's own published scaling for its season
-        s = meta["scaling"]
-        scale[int(s["season"])] = {"mu": s["model_xrv_mean"], "sd": s["model_xrv_sd"]}
+        s, oof = meta["scaling"], "oof" if folds else "model"
+        scale[int(s["season"])] = {"mu": s[f"{oof}_xrv_mean"], "sd": s[f"{oof}_xrv_sd"]}
     sc["stuff"] = 100 - 10 * (sc["pred"] - sc["year"].map(lambda y: scale[y]["mu"])) \
         / sc["year"].map(lambda y: scale[y]["sd"])
 
@@ -278,6 +302,9 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     for y in scale:
         if y in official:
             notes[y] = "Published leaderboard: out-of-fold scores, shrunk (" + official[y] + ")"
+        elif folds:
+            notes[y] = ("Out-of-fold: each pitcher is scored by a model that never saw his pitches"
+                        + (", scores shrunk" if meta else ""))
         elif y in train:
             notes[y] = "In-sample: the model was trained on this season" + (", scores shrunk" if meta else "")
         else:
@@ -292,6 +319,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     bundle = {
         "variant": meta["name"] + " v" + meta["version"] if meta else variant, "label": label,
         "frozen": bool(meta), "features": feats, "model": model,
+        "folds": folds, "pitcher_fold": pitcher_fold,
         "train_years": list(train), "seasons": [int(s) for s in scale], "season_notes": notes,
         "latest_season": int(max(scale)), "scale": scale, "ay_coef": ay_coef,
         "arm_coef": arm_coef, "grades": grades, "percentiles": pct,

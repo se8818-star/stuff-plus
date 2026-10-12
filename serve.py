@@ -6,6 +6,8 @@ frozen model in models/ (final.py's stuffplus_v<version>), it shows that model
 and its published leaderboards; with data/ only, it trains a variant; with
 neither, it serves a synthetic demo.
 
+    python -m webapp.folds                 # once: the leaderboard's out-of-fold models, so
+                                           # every season and the grader are out-of-fold
     python serve.py --synthetic            # force the demo data
     python serve.py --rebuild              # rebuild after new data / code changes
     python serve.py --variant B_plus_center --train 2022 2023 2024 2025   # train instead

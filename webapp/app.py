@@ -53,6 +53,13 @@ class GradeRequest(BaseModel):
     hand: Literal["R", "L"] = "R"
     pitches: list[Pitch] = Field(min_length=1, max_length=12)
     season: Optional[int] = None
+    pitcher: Optional[int] = Field(None, description="MLB pitcher the arsenal was loaded from: "
+                                                     "graded by the fold model that never saw him")
+
+
+class BasedOn(BaseModel):
+    pitcher: int
+    name: str = Field("", max_length=80)
 
 
 class CustomPitcher(BaseModel):
@@ -60,6 +67,7 @@ class CustomPitcher(BaseModel):
     hand: Literal["R", "L"] = "R"
     pitches: list[Pitch] = Field(min_length=1, max_length=12)
     notes: str = Field("", max_length=500)
+    based_on: Optional[BasedOn] = None
 
 
 def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
@@ -79,6 +87,7 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
             "built_at": bundle["built_at"], "versions": bundle["versions"],
             "pitch_types": counts.index.tolist(),
             "has_roles": "role" in pitchers.columns,
+            "out_of_fold": bool(bundle.get("folds")),
             "grades": {str(k): v for k, v in bundle["grades"].items()},
         }
 
@@ -102,7 +111,7 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
     def grade(req: GradeRequest):
         if req.season is not None and req.season not in bundle["seasons"]:
             raise HTTPException(404, f"no season {req.season}")
-        return grade_arsenal(bundle, req.hand, [p.model_dump() for p in req.pitches], req.season)
+        return grade_arsenal(bundle, req.hand, [p.model_dump() for p in req.pitches], req.season, req.pitcher)
 
     # Saved custom pitchers live in one JSON file next to the repo's code, so
     # they survive restarts and rebuilds (gitignored; back it up if it matters).
@@ -118,7 +127,8 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
         os.replace(tmp, custom_path)
 
     def graded(row, season):
-        return {**row, "result": grade_arsenal(bundle, row["hand"], row["pitches"], season)}
+        src = (row.get("based_on") or {}).get("pitcher")
+        return {**row, "result": grade_arsenal(bundle, row["hand"], row["pitches"], season, src)}
 
     @app.get("/api/custom")
     def list_custom(season: Optional[int] = None):

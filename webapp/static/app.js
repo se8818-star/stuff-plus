@@ -313,7 +313,9 @@ const G_FIELDS = [
   ["spin_axis", "Axis", 1, true, "Spin axis (deg, 180 = pure backspin). Optional"],
   ["arm_angle", "Arm°", 1, true, "Arm angle (deg). Optional"],
 ];
-const G = { hand: "R", pitches: [], customId: null, name: "" };
+// basedOn: the MLB pitcher an arsenal was loaded from. The server then grades
+// it with the model that never saw him, so it matches his leaderboard number.
+const G = { hand: "R", pitches: [], customId: null, name: "", basedOn: null };
 function newPitch(t) { return { pitch_type: t, ...TEMPLATES[t], ...ARM, spin_axis: null, arm_angle: null }; }
 function defaultArsenal() { return [newPitch("FF"), newPitch("SL"), newPitch("CH")].map((p, i) => ({ ...p, usage: [50, 30, 20][i] })); }
 function saveG() { try { localStorage.setItem("stuffplus.grader", JSON.stringify(G)); } catch (e) { /* storage unavailable */ } }
@@ -331,6 +333,7 @@ function loadArsenal(hand, rows) {
   }));
   $("#g-note").dataset.src = `Loaded from ${rows[0]?.name} (${rows[0]?.year}).`;
   G.customId = null; G.name = ""; G.savedName = null;
+  G.basedOn = rows[0]?.pitcher != null ? { pitcher: rows[0].pitcher, name: rows[0].name || "" } : null;
   saveG(); renderGraderInputs(); gradeNow();
 }
 // A saved pitcher is open in the grader when G.customId is set. Typing a
@@ -374,7 +377,8 @@ async function gradeNow() {
   if (bad >= 0) { $("#g-note").textContent = `Fill in every required field for pitch ${bad + 1}.`; return; }
   try {
     const res = await api("/api/grade", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hand: G.hand, season: S.season, pitches: G.pitches.map(p => ({ ...p, usage: p.usage ?? 0 })) }) });
+      body: JSON.stringify({ hand: G.hand, season: S.season, pitcher: G.basedOn?.pitcher ?? null,
+        pitches: G.pitches.map(p => ({ ...p, usage: p.usage ?? 0 })) }) });
     if (seq === gradeSeq) renderGrade(res);
   } catch (e) {
     if (seq !== gradeSeq) return;
@@ -396,8 +400,10 @@ function renderGrade(res) {
       <span class="barval">${f0(v)} <span class="grade">· ${p.grade ?? "–"}${p.percentile == null ? "" : " · " + pct(p.percentile)}</span></span></div>`;
   }).join("");
   $("#g-move").innerHTML = movementSVG(G.pitches, 300);
-  const fb = res.pitches.find(p => p.is_primary_fb);
+  const fb = res.pitches.find(p => p.is_primary_fb), m = res.model || {};
   $("#g-note").textContent = [$("#g-note").dataset.src || "",
+    m.fold != null ? `Scored like the leaderboard, by the model that never saw ${G.basedOn?.name || "this pitcher"}'s pitches.`
+      : m.out_of_fold ? "Scored by the average of the leaderboard's five out-of-fold models." : "",
     `Scaled to ${res.season_scale} MLB pitches. Overall is usage-weighted.`,
     fb ? `Primary fastball for velo/movement differences: ${fb.pitch_type}.` : "",
     "Grades are 20-80 vs. the same pitch type; percentile is among MLB pitchers' versions of that pitch."].filter(Boolean).join(" ");
@@ -406,7 +412,7 @@ function wireGrader() {
   wireSeg("g-hand", () => { G.hand = segValue("g-hand"); saveG(); gradeNow(); });
   $("#g-add-type").innerHTML = Object.keys(TEMPLATES).map(t => `<option value="${t}">${t} · ${ptName(t)}</option>`).join("");
   $("#g-add").onclick = () => { if (G.pitches.length >= 12) return; G.pitches.push(newPitch($("#g-add-type").value)); saveG(); renderGraderInputs(); gradeNow(); };
-  $("#g-reset").onclick = () => { G.hand = "R"; G.pitches = defaultArsenal(); G.customId = null; G.name = ""; G.savedName = null; $("#g-saved").textContent = ""; delete $("#g-note").dataset.src; saveG(); renderGraderInputs(); gradeNow(); };
+  $("#g-reset").onclick = () => { G.hand = "R"; G.pitches = defaultArsenal(); G.customId = null; G.name = ""; G.savedName = null; G.basedOn = null; $("#g-saved").textContent = ""; delete $("#g-note").dataset.src; saveG(); renderGraderInputs(); gradeNow(); };
   $("#g-name").oninput = e => { G.name = e.target.value; saveG(); updateSaveButtons(); };
   $("#g-name").onkeydown = e => { if (e.key === "Enter") $("#g-save").click(); };
   // main button: new pitcher when unsaved or renamed; second button is the other choice
@@ -434,7 +440,8 @@ const C = { rows: [] };
 async function saveCustom(asNew) {
   const name = (G.name || "").trim();
   if (!name) { $("#g-name").focus(); $("#g-saved").textContent = "Give the pitcher a name first."; return; }
-  const body = JSON.stringify({ name, hand: G.hand, pitches: G.pitches.map(p => ({ ...p, usage: p.usage ?? 0 })) });
+  const body = JSON.stringify({ name, hand: G.hand, based_on: G.basedOn || null,
+    pitches: G.pitches.map(p => ({ ...p, usage: p.usage ?? 0 })) });
   const opts = { headers: { "Content-Type": "application/json" }, body };
   try {
     let row = null;
@@ -502,7 +509,7 @@ function wireCustom() {
 function openCustom(id) {
   const r = C.rows.find(x => x.id === id);
   if (!r) return;
-  G.hand = r.hand; G.name = r.name; G.customId = r.id; G.savedName = r.name;
+  G.hand = r.hand; G.name = r.name; G.customId = r.id; G.savedName = r.name; G.basedOn = r.based_on || null;
   G.pitches = r.pitches.map(p => ({ ...p }));
   $("#g-note").dataset.src = `Editing your saved pitcher “${r.name}”.`;
   $("#g-saved").textContent = "";
