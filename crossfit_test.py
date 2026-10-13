@@ -97,8 +97,8 @@ def main():
     p = vs["all_100"]["mean"]
     lows = [p["ci"][k][0] for k in ("next_woba", "next_rv100")]
     highs = [p["ci"][k][1] for k in ("next_woba", "next_rv100")]
-    verdict = {"close": bool(min(lows) > -0.03), "as_predictive": bool(min(lows) <= 0 <= min(highs) and all(
-        lo <= 0 <= hi for lo, hi in zip(lows, highs)))}
+    verdict = {"close": bool(min(lows) > -0.03),
+               "as_predictive": bool(all(lo <= 0 <= hi for lo, hi in zip(lows, highs)))}
     means = {m: {mn: {k: float(np.mean([res[y][f"{m}_all_{mn}"][k] for y in EVAL_YEARS])) for k in ra.KEYS}
                  for mn in MIN_PITCHES} for m in METHODS}
     out = {"eval_years": EVAL_YEARS, "results": res, "means": means, "crossfit_minus_remember": vs,
