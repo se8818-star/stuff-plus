@@ -1,0 +1,6 @@
+loaded 3,547,727 pitches (2022-2026) in 19s
+using stuffplus v1.0.0 (frozen model A, out-of-fold): stuffplus_v1.0.0_folds.joblib; check against the published leaderboard: {'season': 2026, 'oof_xrv_mean': -0.00025093334087035907, 'published_oof_xrv_mean': -0.00025093334087035907, 'oof_xrv_sd': 0.0059337789796402845, 'published_oof_xrv_sd': 0.005933778979640285, 'pitchers': 720, 'max_abs_diff': 0.04994085903339851, 'median_abs_diff': 0.025105824077705563, 'reproduces': True}
+  movement check vs Statcast pfx (median abs diff, in): IVB 0.49, HB 0.69
+  2026: using the published leaderboards (leaderboards/pitchers_2026.csv, leaderboards/pitch_types_2026.csv)
+saved /Users/seanepiscope/Documents/stuff-plus/models/stuffplus_site_stuffplus_v1.0.0.joblib  (total 85s)
+Serving stuffplus_site_stuffplus_v1.0.0.joblib at http://127.0.0.1:8000
