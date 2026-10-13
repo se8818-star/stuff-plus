@@ -424,3 +424,39 @@ def test_roles_use_pitches_with_missing_features(v110_paths, monkeypatch):
     assert board.loc[(0, 2026), "role"] == "SP" and board.loc[(0, 2026), "gs"] == 4
     assert board.loc[(1, 2026), "role"] == "RP" and board.loc[(1, 2026), "gs"] == 0
     assert board.loc[(0, 2026), "n"] == 30                 # only the scoreable pitches are graded
+
+
+def _js_engine():
+    import shutil
+    from pathlib import Path
+    jsc = Path("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc")
+    return shutil.which("node") or (str(jsc) if jsc.exists() else None)
+
+
+def test_grader_dropdown_keeps_pitch_types_without_a_template(tmp_path):
+    """An arsenal loaded from the leaderboard can hold FO, SC, KN ...; the row's
+    dropdown must offer that type, or it shows (and becomes) the first template."""
+    import re
+    import subprocess
+    from pathlib import Path
+    src = (Path(webapp.__file__).parent / "static" / "app.js").read_text()
+    fn = re.search(r"function pitchTypeOptions\(types, current\) \{.*?\n\}", src, re.S)
+    assert fn, "pitchTypeOptions is missing"
+    # the row's <select> is built from it, not from the bare template list
+    assert "pitchTypeOptions(types, p.pitch_type).map(" in src
+    assert "types.map(t => `<option value=\"${t}\" title" not in src
+    engine = _js_engine()
+    if engine is None:
+        pytest.skip("no JavaScript engine (node or jsc) to run the helper")
+    script = tmp_path / "check.js"
+    script.write_text(fn.group(0) + """
+const out = typeof console !== "undefined" && console.log ? console.log : print;
+const T = ["FF", "SI", "SL"];
+out(JSON.stringify([pitchTypeOptions(T, "FO"), pitchTypeOptions(T, "SL"), pitchTypeOptions(T, null),
+                    pitchTypeOptions(T, "KN").filter(t => t === "KN").length, T.length]));
+""")
+    res = subprocess.run([engine, str(script)], capture_output=True, text=True, timeout=30)
+    assert res.returncode == 0, res.stderr
+    import json
+    assert json.loads(res.stdout.strip().splitlines()[-1]) == [
+        ["FO", "FF", "SI", "SL"], ["FF", "SI", "SL"], ["FF", "SI", "SL"], 1, 3]

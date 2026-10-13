@@ -316,6 +316,12 @@ const G_FIELDS = [
 // basedOn: the MLB pitcher an arsenal was loaded from. The server then grades
 // it with the model that never saw him, so it matches his leaderboard number.
 const G = { hand: "R", pitches: [], customId: null, name: "", basedOn: null };
+// Pitch types offered for a grader row: the templates, plus the row's own type
+// when it has no template (FO, SC, KN, ... from a loaded arsenal), so it is
+// shown as itself and isn't silently turned into the first template.
+function pitchTypeOptions(types, current) {
+  return !current || types.includes(current) ? types : [current, ...types];
+}
 function newPitch(t) { return { pitch_type: t, ...TEMPLATES[t], ...ARM, spin_axis: null, arm_angle: null }; }
 function defaultArsenal() { return [newPitch("FF"), newPitch("SL"), newPitch("CH")].map((p, i) => ({ ...p, usage: [50, 30, 20][i] })); }
 function saveG() { try { localStorage.setItem("stuffplus.grader", JSON.stringify(G)); } catch (e) { /* storage unavailable */ } }
@@ -353,7 +359,7 @@ function renderGraderInputs() {
   const head = `<thead><tr><th class="l">Pitch</th>${G_FIELDS.map(([, l, , , tip]) =>
     `<th title="${tip}">${l}</th>`).join("")}<th></th></tr></thead>`;
   const body = G.pitches.map((p, i) => `<tr data-i="${i}"><td class="l"><select data-k="pitch_type">${
-    types.map(t => `<option value="${t}" title="${ptName(t)}" ${t === p.pitch_type ? "selected" : ""}>${t}</option>`).join("")}</select></td>${
+    pitchTypeOptions(types, p.pitch_type).map(t => `<option value="${esc(t)}" title="${esc(ptName(t))}" ${t === p.pitch_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></td>${
     G_FIELDS.map(([k, , step, opt]) => `<td><input type="number" data-k="${k}" step="${step}" value="${p[k] ?? ""}" ${opt ? 'class="opt" placeholder="auto"' : ""}></td>`).join("")
     }<td><button class="icon" data-del="${i}" title="Remove" aria-label="Remove pitch">✕</button></td></tr>`).join("");
   const t = $("#g-table"); t.innerHTML = head + `<tbody>${body}</tbody>`;
