@@ -46,3 +46,40 @@ would still be exploratory, on data already examined, and would say nothing
 about forecasting returning pitchers, where memory helps A more than S6. An
 interval including zero means the two remain indistinguishable. Nothing about
 the shipped model changes automatically either way.
+
+## E2. Cross-fitted scoring (no memory of the pitcher) against the remembering model, forward in time
+
+**Decision already made (owner).** Cross-fitted scoring becomes the official
+Stuff+: five models, each trained without a fifth of the pitchers; a pitcher is
+scored only by the model that excluded him, and a pitcher in none of the folds
+by the average of all five. That removes memory of the pitcher by construction.
+This test does not decide whether to ship it; it measures what it costs.
+
+**Question.** With the same training data and scoring forward in time, how much
+next-season predictiveness is lost by not letting the model remember the
+pitcher?
+
+**Design.**
+- Feature set A, TJ's LightGBM settings, seeds 0–2, no tuning.
+- Four forward splits, training from 2020: train on all seasons before year Y,
+  score Y, validate against Y+1, for Y = 2022, 2023, 2024, 2025.
+- *Remembering*: one model on all pitchers in the training seasons (what
+  v1.0.0's saved model does).
+- *Cross-fitted*: 5-fold GroupKFold by pitcher on the same training seasons;
+  each scored pitcher gets the prediction of the fold model that excluded him,
+  or the mean of the five if he was not in the training seasons.
+- Stuff+ scaled within the scored season, per method.
+
+**Primary comparison (fixed before running).** Cross-fitted minus remembering,
+mean over the four splits, minimum 100 pitches in both seasons, unshrunk, for
+next-season wOBA and RV/100, with a paired bootstrap 95% CI (2000 replicates,
+pitchers resampled jointly across splits). I will call cross-fitting "close" if
+the lower end of both intervals is above −0.03, and "as predictive" if both
+intervals include zero.
+
+**Also reported.** Each split; 300 and 500 pitches; stickiness and K−BB%; the
+same comparison restricted to pitchers who were in the training seasons (the
+only ones the remembering model can remember); how closely the two scores
+agree.
+
+**Status.** Exploratory: every season involved has been examined before.
