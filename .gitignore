@@ -8,3 +8,4 @@ __pycache__/
 custom_pitchers.json
 custom_pitchers.json.tmp
 custom_pitchers.json.*.tmp
+serve.log
