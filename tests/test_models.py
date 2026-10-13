@@ -176,3 +176,22 @@ def test_crossfit_never_scores_a_pitcher_with_a_model_that_saw_him(data, monkeyp
         rows = (sc["pitcher"] == pitcher).to_numpy()
         assert (x[rows] == k).all()
     assert (x[(sc["pitcher"] == 999).to_numpy()] == np.mean(range(4))).all()   # unknown: mean of all folds
+
+
+def test_saved_bundle_scoring_has_no_memory_of_known_pitchers(data):
+    spec = models.CANDIDATES["A"]
+    feats = spec["features"]
+    small = {"n_estimators": 15, "learning_rate": 0.1}
+    pitchers = sorted(data["pitcher"].unique())
+    fold_of = {p: i % 3 for i, p in enumerate(pitchers)}
+    fold_models = [models.fit_seed_models(spec, data[data["pitcher"].map(fold_of) != k], small) for k in range(3)]
+    x = models.crossfit_xrv(fold_models, fold_of, data, feats)
+    per_fold = np.vstack([models.predict_seed_models(m, data, feats) for m in fold_models])
+    k = data["pitcher"].map(fold_of).to_numpy()
+    np.testing.assert_allclose(x, per_fold[k, np.arange(len(data))])
+    # a pitcher the bundle has never seen gets the mean of every fold model
+    new = data.assign(pitcher=10_000)
+    np.testing.assert_allclose(models.crossfit_xrv(fold_models, fold_of, new, feats), per_fold.mean(axis=0))
+    # missing feature -> NaN, not a crash
+    holes = data.copy(); holes.loc[holes.index[:3], feats[0]] = np.nan
+    assert np.isnan(models.crossfit_xrv(fold_models, fold_of, holes, feats)[:3]).all()

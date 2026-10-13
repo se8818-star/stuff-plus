@@ -124,3 +124,35 @@ def fit_predict(spec, train, frames, params=None):
         full[m] = p
         out.append(full)
     return out, info
+
+
+# ------------------------------------------------- cross-fitted (no-memory) bundle
+def fit_seed_models(spec, train, params=None):
+    """The fitted LightGBM models (one per seed) for a direct candidate."""
+    from lightgbm import LGBMRegressor
+    assert spec["kind"] == "direct"
+    feats = spec["features"]
+    tr = train.dropna(subset=feats + [spec["target"]])
+    return [LGBMRegressor(**_params(params, sd)).fit(tr[feats], tr[spec["target"]].to_numpy())
+            for sd in spec.get("seeds", SEEDS)]
+
+
+def predict_seed_models(seed_models, frame, feats):
+    """Mean prediction of the seed models; NaN where a feature is missing."""
+    ok = frame[feats].notna().all(axis=1).to_numpy()
+    out = np.full(len(frame), np.nan)
+    if ok.any():
+        out[ok] = np.mean([m.predict(frame.loc[ok, feats]) for m in seed_models], axis=0)
+    return out
+
+
+def crossfit_xrv(fold_models, pitcher_fold, frame, feats):
+    """xRV with no memory of the pitcher: a pitcher the bundle was trained on is
+    scored by the fold model that held him out, anyone else by the mean of all
+    fold models."""
+    preds = np.vstack([predict_seed_models(m, frame, feats) for m in fold_models])
+    k = frame["pitcher"].map(pitcher_fold).to_numpy(dtype=float)
+    known = np.isfinite(k)
+    x = preds.mean(axis=0)
+    x[known] = preds[k[known].astype(int), np.flatnonzero(known)]
+    return x

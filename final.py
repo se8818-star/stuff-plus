@@ -5,9 +5,11 @@ Phase 4: train the shipped model on 2022-2026 and produce the 2026 outputs.
     python final.py --model S6 # the six-variable comparison model, files suffixed _s6
 
 The shipped model is A (tjStuff+ v3.0 feature set, TJ's LightGBM settings, 3
-seeds averaged); see reports/confirmation.md for why. Leaderboard scores are
-out-of-fold (5-fold GroupKFold by pitcher over 2022-2026), so no pitcher is
-scored by a model that was trained on their own results.
+seeds averaged); see reports/confirmation.md for why. Since v1.1.0 the model is
+cross-fitted: five fold models, each trained without a fifth of the pitchers
+(GroupKFold by pitcher over 2022-2026), and a pitcher is only ever scored by a
+model that never saw him. The saved bundle and the leaderboards use the same
+scores.
 """
 import argparse
 import json
@@ -22,10 +24,11 @@ from sklearn.model_selection import GroupKFold
 import run_ablation as ra
 from develop import pitcher_table, shrink, split_half_k, stuff_plus
 from features import load
-from models import AMENDED, CANDIDATES, SEEDS, TJ_PARAMS, add_outcome_flags, fit_predict
+from models import (AMENDED, CANDIDATES, SEEDS, TJ_PARAMS, add_outcome_flags, crossfit_xrv,
+                    fit_seed_models, predict_seed_models)
 
 HERE = Path(__file__).parent
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 MODEL = "A"
 YEARS, SEASON = [2022, 2023, 2024, 2025, 2026], 2026
 MIN_PITCHER, MIN_PITCH_TYPE = 100, 50
@@ -87,22 +90,20 @@ def main():
     df = df[df["target"].notna()].reset_index(drop=True)
     print(f"loaded {len(df):,} pitches ({time.time() - t0:.0f}s)", flush=True)
 
-    # 1. out-of-fold xRV for every pitch (leaderboards, shrinkage constants)
-    oof = np.full(len(df), np.nan)
+    # 1. five fold models, each trained without a fifth of the pitchers. Every
+    #    pitch is scored by the model that never saw its pitcher (cross-fitted).
+    fold_models, pitcher_fold = [], {}
     for k, (i_fit, i_hold) in enumerate(GroupKFold(n_splits=5).split(df, groups=df["pitcher"])):
-        (p,), _ = fit_predict(spec, df.iloc[i_fit], [df.iloc[i_hold]], params)
-        oof[i_hold] = p
-        print(f"out-of-fold {k + 1}/5 ({time.time() - t0:.0f}s)", flush=True)
+        fold_models.append(fit_seed_models(spec, df.iloc[i_fit], params))
+        pitcher_fold.update(dict.fromkeys((int(p) for p in df["pitcher"].iloc[i_hold].unique()), k))
+        print(f"fold model {k + 1}/5 ({time.time() - t0:.0f}s)", flush=True)
+    oof = crossfit_xrv(fold_models, pitcher_fold, df, feats)
 
-    # 2. the shipped model: all pitchers, all seasons
-    from lightgbm import LGBMRegressor
+    # 2. for reference only: one model on all pitchers, which can remember them
     tr = df.dropna(subset=feats + [spec["target"]])
-    models = [LGBMRegressor(**{**TJ_PARAMS, **(params or {}), "random_state": s}).fit(tr[feats], tr[spec["target"]])
-              for s in SEEDS]
-    full = np.full(len(df), np.nan)
-    ok = df[feats].notna().all(axis=1).to_numpy()
-    full[ok] = np.mean([m.predict(df.loc[ok, feats]) for m in models], axis=0)
-    print(f"final model fitted ({time.time() - t0:.0f}s)", flush=True)
+    models = fit_seed_models(spec, df, params)
+    full = predict_seed_models(models, df, feats)
+    print(f"all-pitcher reference model fitted ({time.time() - t0:.0f}s)", flush=True)
 
     cur = (df["year"] == SEASON).to_numpy()
     s_all = stuff_plus(oof, oof)                                  # for k only (scale-free)
@@ -113,21 +114,28 @@ def main():
 
     (HERE / "models").mkdir(exist_ok=True)
     tag = f"stuffplus{sfx}_v{VERSION}"
-    joblib.dump(models, HERE / "models" / f"{tag}.joblib")
+    joblib.dump({"fold_models": fold_models, "pitcher_fold": pitcher_fold, "features": feats},
+                HERE / "models" / f"{tag}.joblib")
     meta = {
         "name": f"stuffplus{sfx}", "version": VERSION, "model": args.model,
         "status": "shipped model" if primary else
                   "comparison model: not confirmed better than the shipped model (reports/confirmation.md)", "features": feats, "target": spec["target"],
         "lightgbm_params": {**TJ_PARAMS, **(params or {})}, "seeds": list(SEEDS),
         "train_years": YEARS, "n_train": int(len(tr)),
-        "scaling": {**scale, "season": SEASON,
-                    "formula": "stuff_plus = 100 - 10 * (xRV - model_xrv_mean) / model_xrv_sd"},
+        "scoring": "cross-fitted: a pitcher in pitcher_fold is scored by the fold model that held him out; "
+                   "any other pitcher by the mean of the five fold models (models.crossfit_xrv, score.py)",
+        "n_pitchers": len(pitcher_fold),
+        "scaling": {"xrv_mean": scale["oof_xrv_mean"], "xrv_sd": scale["oof_xrv_sd"], "season": SEASON,
+                    "formula": "stuff_plus = 100 - 10 * (xRV - xrv_mean) / xrv_sd",
+                    "all_pitcher_reference_model": {"xrv_mean": scale["model_xrv_mean"],
+                                                    "xrv_sd": scale["model_xrv_sd"]}},
         "shrinkage": {"pitcher_k": k_p, "pitch_type_k": k_pt,
                       "formula": "league_mean + n / (n + k) * (raw_mean - league_mean)"},
         "feature_notes": {"ax, x0, haa_ln": "mirrored so both hands share a frame (see features.add_features)",
                           "vaa_ln, haa_ln": "approach angles re-aimed at the centre of the zone (physics.py)",
                           "*_diff": "difference from the pitcher-season's primary fastball (FF/SI/FC by usage)"},
-        "artifact": f"models/{tag}.joblib (list of {len(SEEDS)} LGBMRegressor; average their predictions)",
+        "artifact": f"models/{tag}.joblib: dict with fold_models (5 folds x {len(SEEDS)} LGBMRegressor), "
+                    "pitcher_fold (MLBAM id -> held-out fold) and features",
         "env": ra.env_info()}
     (HERE / "models" / f"{tag}.json").write_text(json.dumps(meta, indent=1, default=float))
 

@@ -14,6 +14,7 @@ from physics import Y50, _time_to_y, grid_angles, VAA_GRID_COLS, HAA_GRID_COLS
 
 HERE = Path(__file__).parent
 FASTBALLS = ["FF", "SI", "FC"]
+EXCLUDED_PITCH_TYPES = ["PO", "IN", "EP", "KN", "FA", "CS", "SC"]
 
 # Statcast `description` -> run-value table outcome (same grouping as TJ's des_dict)
 DES = {
@@ -230,6 +231,6 @@ def load(data_dir: Path, years) -> pd.DataFrame:
     frames = [pd.read_parquet(data_dir / f"statcast_{y}.parquet") for y in years]
     df = plain_dtypes(pd.concat(frames, ignore_index=True))
     df = df[df["pitch_type"].notna()
-            & ~df["pitch_type"].isin(["PO", "IN", "EP", "KN", "FA", "CS", "SC"])].copy()
+            & ~df["pitch_type"].isin(EXCLUDED_PITCH_TYPES)].copy()
     df = add_expected_target(add_target(df))
     return add_features(df)
