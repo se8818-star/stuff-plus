@@ -1,0 +1,83 @@
+{
+ "name": "Stuff+",
+ "file": "models/stuffplus_v1.1.0.joblib (not in git)",
+ "version": "1.1.0",
+ "feature_set": "A",
+ "features": [
+  "start_speed",
+  "spin_rate",
+  "extension",
+  "az",
+  "ax",
+  "x0",
+  "z0",
+  "speed_diff",
+  "az_diff",
+  "ax_diff"
+ ],
+ "target": "target",
+ "lightgbm_params": {
+  "n_estimators": 1000,
+  "learning_rate": 0.01,
+  "num_leaves": 31,
+  "max_depth": -1,
+  "min_child_samples": 20,
+  "subsample": 0.8,
+  "colsample_bytree": 0.8,
+  "reg_alpha": 0.1,
+  "reg_lambda": 0.2,
+  "force_row_wise": true,
+  "deterministic": true,
+  "verbose": -1
+ },
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "train_years": [
+  2022,
+  2023,
+  2024,
+  2025,
+  2026
+ ],
+ "shrinkage": {
+  "pitcher_k": {
+   "k": 12.694112822597468,
+   "r_half": 0.9484486121418273,
+   "harmonic_half_size": 233.54780907330365,
+   "groups": 3571
+  },
+  "pitch_type_k": {
+   "k": 3.7411398148187094,
+   "r_half": 0.9534465424818677,
+   "harmonic_half_size": 76.62109350290113,
+   "groups": 12096
+  },
+  "formula": "league_mean + n / (n + k) * (raw_mean - league_mean)"
+ },
+ "feature_notes": {
+  "ax, x0": "mirrored so both hands share a frame (see features.add_features)",
+  "*_diff": "difference from the pitcher-season's primary fastball (FF/SI/FC by usage)"
+ },
+ "env": {
+  "python": "3.9.6",
+  "platform": "macOS-15.7.3-arm64-arm-64bit",
+  "numpy": "2.0.2",
+  "pandas": "2.3.3",
+  "scikit-learn": "1.6.1",
+  "lightgbm": "4.6.0",
+  "pyarrow": "21.0.0",
+  "pybaseball": "2.2.7",
+  "optuna": "5.0.0"
+ },
+ "scoring": "one model trained on every pitcher; it remembers them, so use it only on seasons after 2026. The 2026 leaderboard was scored by a model trained on 2022-2025.",
+ "artifact": "dict with models (3 LGBMRegressor, average them) and features",
+ "scaling": {
+  "xrv_mean": -0.0006223119964125383,
+  "xrv_sd": 0.005857454717779536,
+  "season": 2026,
+  "formula": "stuff_plus = 100 - 10 * (xRV - xrv_mean) / xrv_sd"
+ }
+}

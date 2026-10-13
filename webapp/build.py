@@ -81,10 +81,15 @@ def infer_roles(df):
 
 
 def frozen_meta():
-    """The shipped model's metadata (models/stuffplus_v<version>.json), if any."""
-    metas = sorted(MODELS.glob("stuffplus_v*.json"))
-    metas = [m for m in metas if (MODELS / f"{m.stem}.joblib").exists()]
-    return metas[-1] if metas else None
+    """The shipped model's metadata, if any. Since v1.1.0 the website shows
+    Stuff+ (no remembering), models/stuffplus_no_remembering_v<version>.json,
+    whose bundle already holds final.py's fold models. Before that it was
+    models/stuffplus_v<version>.json plus webapp.folds."""
+    for pattern in ("stuffplus_no_remembering_v*.json", "stuffplus_v*.json"):
+        metas = [m for m in sorted(MODELS.glob(pattern)) if (MODELS / f"{m.stem}.joblib").exists()]
+        if metas:
+            return metas[-1]
+    return None
 
 
 def roles_by_season(df):
@@ -150,13 +155,21 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         k_pitcher = meta["shrinkage"]["pitcher_k"]["k"]
         k_type = meta["shrinkage"]["pitch_type_k"]["k"]
         fp = folds_path(frozen)
-        label = f"stuffplus v{meta['version']} (frozen model {meta['model']}{', out-of-fold' if fp.exists() else ''})"
-        if fp.exists():
+        art = joblib.load(Path(frozen).with_suffix(".joblib"))
+        own_folds = isinstance(art, dict) and "fold_models" in art      # final.py >= 1.1.0
+        suffix = "_no_remembering" if own_folds else ""
+        oof = own_folds or fp.exists()
+        label = (f"{meta.get('name', 'stuffplus')} v{meta['version']} (frozen model "
+                 f"{meta.get('model', meta.get('feature_set'))}{', out-of-fold' if oof else ''})")
+        if own_folds:
+            models, pitcher_fold = art["fold_models"], art["pitcher_fold"]
+            print(f"using {label}: fold models from {Path(frozen).with_suffix('.joblib').name}")
+        elif fp.exists():
             fb = joblib.load(fp)
             models, pitcher_fold = fb["models"], fb["pitcher_fold"]
             print(f"using {label}: {fp.name}; check against the published leaderboard: {fb['check']}")
         else:
-            model = AveragedModel(joblib.load(Path(frozen).with_suffix(".joblib")), feats)
+            model = AveragedModel(art, feats)
             print(f"using {label}: {Path(frozen).name}. No {fp.name}, so the grader and the seasons "
                   "before the published one use this full model (in-sample); "
                   "run `python -m webapp.folds` to score them out-of-fold.")
@@ -188,7 +201,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
              for y, g in sc.groupby("year")}
     if meta:  # the frozen model's own published scaling for its season
         s, oof = meta["scaling"], "oof" if folds else "model"
-        scale[int(s["season"])] = {"mu": s[f"{oof}_xrv_mean"], "sd": s[f"{oof}_xrv_sd"]}
+        scale[int(s["season"])] = ({"mu": s["xrv_mean"], "sd": s["xrv_sd"]} if "xrv_mean" in s else
+                                   {"mu": s[f"{oof}_xrv_mean"], "sd": s[f"{oof}_xrv_sd"]})
     sc["stuff"] = 100 - 10 * (sc["pred"] - sc["year"].map(lambda y: scale[y]["mu"])) \
         / sc["year"].map(lambda y: scale[y]["sd"])
 
@@ -241,7 +255,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     # the website's own numbers for that season, so the two always agree.
     if meta:
         y = int(meta["scaling"]["season"])
-        fp, ft = ROOT / "leaderboards" / f"pitchers_{y}.csv", ROOT / "leaderboards" / f"pitch_types_{y}.csv"
+        fp = ROOT / "leaderboards" / f"pitchers_{y}{suffix}.csv"
+        ft = ROOT / "leaderboards" / f"pitch_types_{y}{suffix}.csv"
         if fp.exists() and ft.exists():
             op = pd.read_csv(fp).assign(year=y)
             ot = pd.read_csv(ft).assign(year=y)

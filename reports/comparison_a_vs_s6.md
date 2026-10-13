@@ -1,6 +1,6 @@
-# Shipped model (A) against the six-variable model (S6), 2026
+# Stuff+ (no remembering) against the six-variable model (S6), 2026
 
-Both trained on 2022–2026 with the same settings; scores are out-of-fold by pitcher and shrunk. A uses ten inputs (velocity, spin, extension, vertical and horizontal acceleration, release x/z, and three fastball differences). S6 uses six (velocity, extension, location-neutral VAA and HAA, and their differences from the fastball). S6 was not confirmed as better or worse than A (`reports/confirmation.md`).
+Both trained on 2022–2026 with the same settings; both are scored without remembering the pitcher (out-of-fold) and shrunk. A below is Stuff+ (no remembering). A uses ten inputs (velocity, spin, extension, vertical and horizontal acceleration, release x/z, and three fastball differences). S6 uses six (velocity, extension, location-neutral VAA and HAA, and their differences from the fastball). S6 was not confirmed as better or worse than A (`reports/confirmation.md`).
 
 |  | A | S6 |
 |---|---:|---:|
