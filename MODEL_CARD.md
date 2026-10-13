@@ -229,6 +229,24 @@ trails A at 300 and 500 pitches.
 - S6 is less affected by Coors (−2.4 against −5.4) and slightly more tied to
   velocity (r = 0.69 against 0.63).
 
+### Out-of-pitcher comparison on 2020–2026 (exploratory)
+
+`pitcher_holdout.py` (plan in `EXPLORATORY.md`) scores every 2020–2026 pitch
+with a model that never saw that pitcher (5 folds by pitcher, 4.5 million
+pitches, 1,863 pitchers) and averages six season pairs. S6 minus A:
+
+| Min pitches | Next wOBA | Next RV/100 | Stickiness |
+|---|---:|---:|---:|
+| 100 | −0.022 [−0.048, +0.003] | −0.020 [−0.046, +0.005] | +0.011 [−0.002, +0.025] |
+| 300 | −0.049 [−0.080, −0.022] | −0.046 [−0.077, −0.019] | +0.009 [−0.005, +0.022] |
+| 500 | −0.030 [−0.063, −0.000] | −0.028 [−0.060, +0.002] | +0.013 [−0.001, +0.027] |
+
+With memory of the pitcher removed, A predicts next-season results better than
+S6: the gap is borderline at 100 pitches and excludes zero at 300. S6's apparent
+lead on 87 newly debuted pitchers did not hold up on the larger sample. S6 is
+about 0.01 stickier. This was run on data already examined, so it is supporting
+evidence for shipping A, not a confirmation.
+
 ## Limitations
 
 - **Did not beat the baseline.** This model's feature set is tjStuff+ v3.0's.

@@ -26,6 +26,8 @@ python final.py               # models/, leaderboards/, park check
 python final.py --model S6    # six-variable comparison model (files suffixed _s6)
 python compare_models.py      # leaderboards/comparison_2026.csv, reports/comparison_a_vs_s6.md
 python overfit_check.py       # reports/overfit_check.md
+python holdout_check.py       # reports/holdout_2025_2026.md
+python fetch_data.py 2020 2021 && python pitcher_holdout.py   # reports/pitcher_holdout.md (exploratory)
 python run_ablation.py --synthetic   # smoke test, no data needed
 ```
 
