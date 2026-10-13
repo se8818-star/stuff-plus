@@ -258,3 +258,91 @@ def test_folds_step_still_recognises_a_v100_model(tmp_path):
     joblib.dump([], path.with_suffix(".joblib"))                 # v1.0.0 saved a plain list of models
     assert not folds.already_has_folds(meta, path)
     assert not folds.already_has_folds(meta, tmp_path / "missing.json")
+
+
+# ------------------------------------------------ v1.1.0 site path (no-remembering bundle)
+@pytest.fixture(scope="module")
+def v110_site(tmp_path_factory):
+    """A tiny Stuff+ (no remembering) v1.1.0 model in a temp models dir, shaped
+    like final.py's: fold models over 5 GroupKFold-by-pitcher folds, the fold
+    each pitcher was held out of, and metadata with xrv_mean scaling."""
+    import json
+
+    from sklearn.model_selection import GroupKFold
+
+    import models as stuff_models
+    from webapp import build as wb
+
+    root = tmp_path_factory.mktemp("site_root")
+    mdir = root / "models"
+    mdir.mkdir()
+    size = (40, 120)
+    df = wb.load_synthetic([2024, 2025, 2026], *size)
+    spec = stuff_models.CANDIDATES["A"]
+    feats = spec["features"]
+    small = {"n_estimators": 12, "learning_rate": 0.1}
+    fold_models, pitcher_fold = [], {}
+    for k, (i_fit, i_hold) in enumerate(GroupKFold(n_splits=5).split(df, groups=df["pitcher"])):
+        fold_models.append(stuff_models.fit_seed_models(spec, df.iloc[i_fit], small))
+        pitcher_fold.update(dict.fromkeys((int(p) for p in df["pitcher"].iloc[i_hold].unique()), k))
+    xrv = stuff_models.crossfit_xrv(fold_models, pitcher_fold, df[df["year"] == 2026], feats)
+    meta = {"name": "Stuff+ (no remembering)", "version": "1.1.0", "feature_set": "A", "features": feats,
+            "target": "target", "train_years": [2024, 2025, 2026], "seeds": [0, 1, 2],
+            "shrinkage": {"pitcher_k": {"k": 12.0}, "pitch_type_k": {"k": 4.0}},
+            "scaling": {"xrv_mean": float(np.nanmean(xrv)), "xrv_sd": float(np.nanstd(xrv)), "season": 2026}}
+    stem = mdir / "stuffplus_no_remembering_v1.1.0"
+    joblib.dump({"fold_models": fold_models, "pitcher_fold": pitcher_fold, "features": feats},
+                stem.with_suffix(".joblib"))
+    stem.with_suffix(".json").write_text(json.dumps(meta))
+    # an older remembering-model file next to it must not be picked instead
+    (mdir / "stuffplus_v1.1.0.json").write_text(json.dumps({**meta, "name": "Stuff+"}))
+    joblib.dump({"models": fold_models[0], "features": feats}, mdir / "stuffplus_v1.1.0.joblib")
+    return {"root": root, "models": mdir, "meta": stem.with_suffix(".json"), "size": size,
+            "fold_models": fold_models, "pitcher_fold": pitcher_fold, "df": df, "feats": feats}
+
+
+@pytest.fixture()
+def v110_paths(v110_site, monkeypatch):
+    from webapp import build as wb
+    monkeypatch.setattr(wb, "MODELS", v110_site["models"])
+    monkeypatch.setattr(wb, "ROOT", v110_site["root"])       # no leaderboards/ here: nothing published
+    return v110_site
+
+
+def test_site_builds_from_a_v110_no_remembering_bundle(v110_paths):
+    from webapp import build as wb
+    site = v110_paths
+    assert wb.frozen_meta() == site["meta"]
+    out = wb.build(synthetic=True, frozen=wb.frozen_meta(), synth_size=site["size"],
+                   out=site["models"] / "site.joblib")
+    b = joblib.load(out)
+    assert b["variant"] == "Stuff+ (no remembering) v1.1.0" and b["frozen"]
+    assert b["seasons"] == [2024, 2025, 2026] and len(b["folds"]) == 5
+    assert b["pitcher_fold"] == site["pitcher_fold"]
+    # every season is scored out-of-fold, none in-sample
+    assert all(note.startswith("Out-of-fold") for note in b["season_notes"].values()), b["season_notes"]
+    # 2026 uses the model's own published scaling constants
+    meta_scale = __import__("json").loads(site["meta"].read_text())["scaling"]
+    assert b["scale"][2026] == {"mu": meta_scale["xrv_mean"], "sd": meta_scale["xrv_sd"]}
+
+    # the grader scores a known pitcher with the fold that never saw him
+    pt = b["pitch_types"]
+    by_fold = {}
+    for pid in pt[pt["year"] == 2026]["pitcher"].unique():
+        by_fold.setdefault(site["pitcher_fold"][int(pid)], []).append(int(pid))
+    (k1, ids1), (k2, ids2) = list(by_fold.items())[:2]
+    rows = pt[(pt["pitcher"] == ids1[0]) & (pt["year"] == 2026)]
+    hand = rows["hand"].iat[0]
+    pitches = rows[["pitch_type", "usage", "velo", "spin", "ext", "rel_side", "rel_height",
+                    "ivb", "hb", "spin_axis", "arm_angle"]].to_dict("records")
+    own = grade_arsenal(b, hand, pitches, pitcher=ids1[0])
+    assert own["model"] == {"out_of_fold": True, "fold": k1, "pitcher": ids1[0]}
+    score = lambda r: [p["stuff_plus_model"] for p in r["pitches"]]  # noqa: E731
+    # same arsenal, another pitcher of the same fold -> same model, same scores
+    assert score(grade_arsenal(b, hand, pitches, pitcher=ids1[1])) == score(own)
+    # a pitcher of a different fold, or nobody, is a different model
+    other = grade_arsenal(b, hand, pitches, pitcher=ids2[0])
+    assert other["model"]["fold"] == k2 and score(other) != score(own)
+    anon = grade_arsenal(b, hand, pitches)
+    assert anon["model"] == {"out_of_fold": True, "fold": None, "pitcher": None}   # mean of all folds
+    assert score(anon) != score(own)
