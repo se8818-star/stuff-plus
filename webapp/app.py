@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import tempfile
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -115,6 +117,11 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
 
     # Saved custom pitchers live in one JSON file next to the repo's code, so
     # they survive restarts and rebuilds (gitignored; back it up if it matters).
+    # Requests run on several threads: every read-modify-write holds this lock,
+    # and a write goes to its own temp file before replacing the real one, so
+    # two saves can neither lose each other's change nor share a temp file.
+    custom_lock = threading.Lock()
+
     def read_custom():
         try:
             return json.loads(Path(custom_path).read_text())
@@ -122,9 +129,15 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
             return []
 
     def write_custom(rows):
-        tmp = Path(f"{custom_path}.tmp")
-        tmp.write_text(json.dumps(rows, indent=1))
-        os.replace(tmp, custom_path)
+        path = Path(custom_path)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(json.dumps(rows, indent=1))
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
 
     def graded(row, season):
         src = (row.get("based_on") or {}).get("pitcher")
@@ -134,33 +147,38 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
     def list_custom(season: Optional[int] = None):
         if season is not None and season not in bundle["seasons"]:
             raise HTTPException(404, f"no season {season}")
-        return [graded(r, season) for r in read_custom()]
+        with custom_lock:
+            rows = read_custom()
+        return [graded(r, season) for r in rows]
 
     @app.post("/api/custom")
     def create_custom(p: CustomPitcher):
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         row = {"id": uuid.uuid4().hex[:12], **p.model_dump(), "created": now, "updated": now}
-        write_custom(read_custom() + [row])
+        with custom_lock:
+            write_custom(read_custom() + [row])
         return graded(row, None)
 
     @app.put("/api/custom/{cid}")
     def update_custom(cid: str, p: CustomPitcher):
-        rows = read_custom()
-        for i, r in enumerate(rows):
-            if r["id"] == cid:
-                rows[i] = {**r, **p.model_dump(),
-                           "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-                write_custom(rows)
-                return graded(rows[i], None)
-        raise HTTPException(404, "unknown custom pitcher")
+        with custom_lock:
+            rows = read_custom()
+            i = next((i for i, r in enumerate(rows) if r["id"] == cid), None)
+            if i is None:
+                raise HTTPException(404, "unknown custom pitcher")
+            rows[i] = {**rows[i], **p.model_dump(),
+                       "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+            write_custom(rows)
+        return graded(rows[i], None)
 
     @app.delete("/api/custom/{cid}")
     def delete_custom(cid: str):
-        rows = read_custom()
-        keep = [r for r in rows if r["id"] != cid]
-        if len(keep) == len(rows):
-            raise HTTPException(404, "unknown custom pitcher")
-        write_custom(keep)
+        with custom_lock:
+            rows = read_custom()
+            keep = [r for r in rows if r["id"] != cid]
+            if len(keep) == len(rows):
+                raise HTTPException(404, "unknown custom pitcher")
+            write_custom(keep)
         return {"deleted": cid}
 
     # The page and its script must always match the running server, so make

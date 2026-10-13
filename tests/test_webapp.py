@@ -460,3 +460,53 @@ out(JSON.stringify([pitchTypeOptions(T, "FO"), pitchTypeOptions(T, "SL"), pitchT
     import json
     assert json.loads(res.stdout.strip().splitlines()[-1]) == [
         ["FO", "FF", "SI", "SL"], ["FF", "SI", "SL"], ["FF", "SI", "SL"], 1, 3]
+
+
+def test_concurrent_saves_do_not_lose_each_other(bundle_file, tmp_path, monkeypatch):
+    """Saves arriving at the same time must all land: the read-modify-write of
+    the JSON file is serialized, and each write uses its own temp file."""
+    import threading
+    import time
+
+    from fastapi.testclient import TestClient
+
+    import webapp.app as app_module
+    from webapp.app import create_app
+
+    real_dumps = app_module.json.dumps
+
+    def slow_dumps(*a, **k):                      # hold the window between read and write open
+        time.sleep(0.02)
+        return real_dumps(*a, **k)
+
+    monkeypatch.setattr(app_module.json, "dumps", slow_dumps)
+    monkeypatch.setattr(app_module, "grade_arsenal", lambda *a, **k: {})     # grading is not under test
+    store = tmp_path / "custom.json"
+    c = TestClient(create_app(bundle_file, custom_path=store))
+    arsenal = [{"pitch_type": "FF", "usage": 60, "velo": 96, "spin": 2400, "ivb": 17, "hb": 8},
+               {"pitch_type": "SL", "usage": 40, "velo": 86, "spin": 2500, "ivb": 2, "hb": -4}]
+    codes = []
+
+    def save(i):
+        codes.append(c.post("/api/custom", json={"name": f"P{i}", "hand": "R", "pitches": arsenal}).status_code)
+
+    threads = [threading.Thread(target=save, args=(i,)) for i in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert codes == [200] * 12
+    saved = app_module.json.loads(store.read_text())
+    assert sorted(r["name"] for r in saved) == sorted(f"P{i}" for i in range(12))
+    assert len({r["id"] for r in saved}) == 12
+    assert [p.name for p in tmp_path.iterdir()] == ["custom.json"]            # no temp files left behind
+
+    # a failed write leaves the saved file intact and no temp file
+    def broken_dumps(*a, **k):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(app_module.json, "dumps", broken_dumps)
+    with pytest.raises(RuntimeError):
+        c.post("/api/custom", json={"name": "lost", "hand": "R", "pitches": arsenal})
+    assert len(app_module.json.loads(store.read_text())) == 12
+    assert [p.name for p in tmp_path.iterdir()] == ["custom.json"]
