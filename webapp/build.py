@@ -117,6 +117,18 @@ def shrink(raw, n, k, groups):
     return mu + n / (n + k) * (raw - mu)
 
 
+def prefer_published(own, published, on):
+    """Left-join the published leaderboard onto the site's own rows: published
+    values where a row was published, the site's own value otherwise. Columns
+    only the published table has (rank, grade) are NaN for unpublished rows."""
+    out = own.merge(published, on=on, how="left", suffixes=("", "_pub"))
+    for c in [c[:-4] for c in out.columns if c.endswith("_pub")]:
+        out[c] = out[f"{c}_pub"].where(out[f"{c}_pub"].notna(), out[c])
+        out = out.drop(columns=f"{c}_pub")
+    out["n"] = out["n"].astype(int)
+    return out
+
+
 def flip_name(s):
     """Savant's "Last, First" -> "First Last"."""
     parts = s.fillna("").str.split(", ", n=1)
@@ -262,19 +274,20 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         if fp.exists() and ft.exists():
             op = pd.read_csv(fp).assign(year=y)
             ot = pd.read_csv(ft).assign(year=y)
-            cur = tot[tot["year"] == y].drop(columns=["stuff_plus", "stuff_plus_raw", "role", "games", "gs"],
-                                             errors="ignore")
-            cur = cur.drop(columns="n").merge(
-                op[keys + ["rank", "pitches", "stuff_plus", "stuff_plus_raw", "grade", "role", "g", "gs"]]
-                .rename(columns={"g": "games", "pitches": "n"}), on=keys, how="inner")
-            cur = cur.sort_values("rank").drop(columns="rank")  # published order breaks ties
+            # Published rows only cover qualified pitchers (and pitch types). Keep
+            # everyone, as in every other season: published values where they
+            # exist, the site's own out-of-fold, shrunk scores for the rest.
+            pub = (op[keys + ["rank", "pitches", "stuff_plus", "stuff_plus_raw", "grade", "role", "g", "gs"]]
+                   .rename(columns={"g": "games", "pitches": "n"}))
+            cur = prefer_published(tot[tot["year"] == y], pub, keys)
+            cur = cur.sort_values(["rank", "stuff_plus"], ascending=[True, False], na_position="last") \
+                     .drop(columns="rank")                       # published order breaks ties
             tot = pd.concat([tot[tot["year"] != y], cur], ignore_index=True)
-            curt = pt[pt["year"] == y].drop(columns=["stuff_plus", "stuff_plus_raw"], errors="ignore")
-            curt = curt.merge(ot[keys + ["pitch_type", "rank_in_type", "pitches", "stuff_plus",
-                                         "stuff_plus_raw", "grade"]],
-                              on=keys + ["pitch_type"], how="left")
-            curt["n"] = curt["pitches"].fillna(curt["n"]).astype(int)
-            curt = curt.sort_values(["pitch_type", "rank_in_type"]).drop(columns=["pitches", "rank_in_type"])
+            pubt = (ot[keys + ["pitch_type", "rank_in_type", "pitches", "stuff_plus", "stuff_plus_raw", "grade"]]
+                    .rename(columns={"pitches": "n"}))
+            curt = prefer_published(pt[pt["year"] == y], pubt, keys + ["pitch_type"])
+            curt = curt.sort_values(["pitch_type", "rank_in_type", "stuff_plus"], ascending=[True, True, False],
+                                    na_position="last").drop(columns="rank_in_type")
             pt = pd.concat([pt[pt["year"] != y], curt], ignore_index=True)
             official = {y: f"{fp.relative_to(ROOT)}, {ft.relative_to(ROOT)}"}
             print(f"  {y}: using the published leaderboards ({official[y]})")
@@ -318,7 +331,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     notes = {}
     for y in scale:
         if y in official:
-            notes[y] = "Published leaderboard: out-of-fold scores, shrunk (" + official[y] + ")"
+            notes[y] = ("Published leaderboard: out-of-fold scores, shrunk (" + official[y] + "); rows below "
+                        "the published minimum pitches use the site's own out-of-fold, shrunk scores")
         elif folds:
             notes[y] = ("Out-of-fold: each pitcher is scored by a model that never saw his pitches"
                         + (", scores shrunk" if meta else ""))

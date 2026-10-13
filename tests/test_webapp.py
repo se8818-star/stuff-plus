@@ -346,3 +346,52 @@ def test_site_builds_from_a_v110_no_remembering_bundle(v110_paths):
     anon = grade_arsenal(b, hand, pitches)
     assert anon["model"] == {"out_of_fold": True, "fold": None, "pitcher": None}   # mean of all folds
     assert score(anon) != score(own)
+
+
+def test_published_season_keeps_unqualified_pitchers(v110_paths):
+    """The published CSVs only hold qualified pitchers. The site shows their
+    published numbers and keeps everyone else with its own scores, so the
+    published season lists the same pitchers as any other season."""
+    from webapp import build as wb
+    site = v110_paths
+    plain = joblib.load(wb.build(synthetic=True, frozen=site["meta"], synth_size=site["size"],
+                                 out=site["models"] / "plain.joblib", spread=None))
+    own = plain["pitchers"][plain["pitchers"]["year"] == 2026].set_index("pitcher")
+    own_t = plain["pitch_types"][plain["pitch_types"]["year"] == 2026]
+    published = sorted(own.index)[::2]                         # every other pitcher is "qualified"
+    lb = site["root"] / "leaderboards"
+    lb.mkdir(exist_ok=True)
+    try:
+        op = own.loc[published].reset_index()
+        pd.DataFrame({"rank": range(1, len(op) + 1), "pitcher": op["pitcher"], "pitches": op["n"] + 7,
+                      "stuff_plus": 150.0 - np.arange(len(op)), "stuff_plus_raw": 151.0, "grade": 77,
+                      "role": "SP", "g": 9, "gs": 9}).to_csv(lb / "pitchers_2026_no_remembering.csv", index=False)
+        ot = own_t[own_t["pitcher"].isin(published) & (own_t["pitch_type"] == "FF")]
+        pd.DataFrame({"pitch_type": "FF", "rank_in_type": range(1, len(ot) + 1), "pitcher": ot["pitcher"].to_numpy(),
+                      "pitches": ot["n"].to_numpy(), "stuff_plus": 140.0, "stuff_plus_raw": 141.0,
+                      "grade": 66}).to_csv(lb / "pitch_types_2026_no_remembering.csv", index=False)
+        b = joblib.load(wb.build(synthetic=True, frozen=site["meta"], synth_size=site["size"],
+                                 out=site["models"] / "published.joblib", spread=None))
+    finally:
+        for f in lb.glob("*.csv"):
+            f.unlink()
+        lb.rmdir()
+    cur = b["pitchers"][b["pitchers"]["year"] == 2026].set_index("pitcher")
+    assert sorted(cur.index) == sorted(own.index)                         # nobody vanished
+    assert len(cur) == (b["pitchers"]["year"] == 2025).sum()
+    # published pitchers: the published numbers, in published order, first
+    assert list(cur.index[:len(published)]) == published
+    assert cur.loc[published, "stuff_plus"].tolist() == list(150.0 - np.arange(len(published)))
+    assert (cur.loc[published, "n"] == own.loc[published, "n"] + 7).all()
+    assert (cur.loc[published, "grade"] == 77).all() and (cur.loc[published, "role"] == "SP").all()
+    # everyone else: the site's own scores, with a grade computed by the site
+    rest = [p for p in own.index if p not in published]
+    np.testing.assert_allclose(cur.loc[rest, "stuff_plus"], own.loc[rest, "stuff_plus"])
+    np.testing.assert_allclose(cur.loc[rest, "stuff_plus_raw"], own.loc[rest, "stuff_plus_raw"])
+    assert (cur.loc[rest, "n"] == own.loc[rest, "n"]).all() and cur.loc[rest, "grade"].notna().all()
+    assert "site's own" in b["season_notes"][2026] and b["season_notes"][2025].startswith("Out-of-fold")
+    # pitch types: published where published, the site's own (not NaN) elsewhere
+    t = b["pitch_types"][b["pitch_types"]["year"] == 2026]
+    pub_rows = t["pitcher"].isin(published) & (t["pitch_type"] == "FF")
+    assert (t.loc[pub_rows, "stuff_plus"] == 140.0).all() and len(t) == len(own_t)
+    assert t["stuff_plus"].notna().all() and (t.loc[~pub_rows, "stuff_plus"] != 140.0).all()
