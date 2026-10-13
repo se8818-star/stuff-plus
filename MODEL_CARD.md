@@ -313,7 +313,7 @@ trails A at 300 and 500 pitches.
 - S6 is less affected by Coors (−2.4 against −5.4) and slightly more tied to
   velocity (r = 0.69 against 0.63).
 
-### Out-of-pitcher comparison on 2020–2026 (exploratory)
+### E1: out-of-pitcher comparison on 2020–2026 (exploratory)
 
 `pitcher_holdout.py` (plan in `EXPLORATORY.md`) scores every 2020–2026 pitch
 with a model that never saw that pitcher (5 folds by pitcher, 4.5 million
