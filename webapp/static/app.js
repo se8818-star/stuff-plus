@@ -1,11 +1,13 @@
 // Stuff+ leaderboards and grader. Plain JS, no build step.
 "use strict";
 
+// Pitch-type colours avoid red and blue, which mean better / worse than average.
+// Each is at least 3:1 against the light (#fff, #f6f7f9) and dark (#171b22, #0f1217) surfaces.
 const PT = {
-  FF: ["Four-seam", "#d22d49"], SI: ["Sinker", "#f08c00"], FC: ["Cutter", "#933f2c"],
-  SL: ["Slider", "#c9b500"], ST: ["Sweeper", "#b8912a"], SV: ["Slurve", "#7f9cc9"],
-  CU: ["Curveball", "#00a9c4"], KC: ["Knuckle curve", "#6236cd"], CH: ["Changeup", "#1d9e3a"],
-  FS: ["Splitter", "#3a9a9a"], FO: ["Forkball", "#55a0a0"], SC: ["Screwball", "#60db33"],
+  FF: ["Four-seam", "#b07d12"], SI: ["Sinker", "#8c6239"], FC: ["Cutter", "#7a7a1e"],
+  SL: ["Slider", "#2f8a4e"], ST: ["Sweeper", "#11867c"], SV: ["Slurve", "#5c8a1e"],
+  CU: ["Curveball", "#8456c9"], KC: ["Knuckle curve", "#9a5b9e"], CH: ["Changeup", "#b24f8e"],
+  FS: ["Splitter", "#687585"], FO: ["Forkball", "#7a7a7a"], SC: ["Screwball", "#a08356"],
 };
 const ptColor = t => (PT[t] || [t, "#888"])[1];
 const ptName = t => (PT[t] || [t])[0];
@@ -65,7 +67,10 @@ const stuffCell = v => v == null ? '<span class="muted">–</span>'
 const S = { meta: null, season: null, data: null, byPitcher: {}, sort: {} };
 
 // ------------------------------------------------------------- generic table
-function renderTable(table, cols, rows, key, onClick) {
+// cols are in CSV order; `front` lists keys shown first on screen (the CSV keeps its order)
+const displayOrder = (cols, front) => [...front.map(k => cols.find(c => c.key === k)).filter(Boolean),
+  ...cols.filter(c => !front.includes(c.key))];
+function renderTable(table, cols, rows, key, onClick, focusKey) {
   const st = S.sort[key] || (S.sort[key] = { col: cols.find(c => c.defaultSort)?.key, asc: false });
   const col = cols.find(c => c.key === st.col);
   if (col) {
@@ -76,18 +81,23 @@ function renderTable(table, cols, rows, key, onClick) {
       return (x < y ? -1 : x > y ? 1 : 0) * (st.asc ? 1 : -1);
     });
   }
-  const head = cols.map(c => `<th data-k="${c.key}" class="${c.l ? "l " : ""}${c.key === st.col ? "sorted" + (st.asc ? " asc" : "") : ""}"
-    ${c.title ? `title="${esc(c.title)}"` : ""}>${c.label}</th>`).join("");
+  const sortable = c => c.key !== "rank" && c.label !== "";
+  const head = cols.map(c => {
+    const sorted = c.key === st.col, aria = sorted ? ` aria-sort="${st.asc ? "ascending" : "descending"}"` : "";
+    return `<th data-k="${c.key}" class="${c.l ? "l " : ""}${c.cls || ""} ${c.nx ? "nx " : ""}${sorted ? "sorted" + (st.asc ? " asc" : "") : ""}"${aria}
+    ${c.title ? `title="${esc(c.title)}"` : ""}>${sortable(c) ? `<button type="button" class="th-btn">${c.label}</button>` : c.label}</th>`;
+  }).join("");
   const body = rows.map((r, i) => `<tr data-i="${i}">${cols.map(c =>
-    `<td class="${c.l ? "l " : ""}${c.cls || ""}">${c.render ? c.render(r, i) : esc(r[c.key])}</td>`).join("")}</tr>`).join("");
+    `<td class="${c.l ? "l " : ""}${c.cls || ""}${c.nx ? " nx" : ""}">${c.render ? c.render(r, i) : esc(r[c.key])}</td>`).join("")}</tr>`).join("");
   table.innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
-  table.querySelectorAll("th").forEach(th => th.onclick = () => {
-    const k = th.dataset.k;
-    if (k === "rank") return;
+  table.querySelectorAll("th .th-btn").forEach(b => b.onclick = () => {
+    const k = b.closest("th").dataset.k;
     st.asc = st.col === k ? !st.asc : false; st.col = k;
-    renderTable(table, cols, rows, key, onClick);
+    renderTable(table, cols, rows, key, onClick, k);
   });
-  if (onClick) table.querySelectorAll("tbody tr").forEach(tr => tr.onclick = () => onClick(rows[+tr.dataset.i]));
+  if (focusKey) table.querySelector(`th[data-k="${focusKey}"] .th-btn`)?.focus();
+  // whole-row click for the mouse; the name button inside is the keyboard route
+  if (onClick) table.querySelectorAll("tbody tr").forEach(tr => tr.onclick = () => onClick(rows[+tr.dataset.i], tr));
   return rows;
 }
 
@@ -108,6 +118,10 @@ function wireSeg(id, cb) {
   });
 }
 
+// name cell: a button (keyboard route to the drawer) plus a subline shown on phones
+const nameCell = (r, sub) => `<button type="button" class="name-btn" data-pid="${r.pitcher}">${esc(r.name)}</button>`
+  + `<span class="sub">${esc(sub.filter(Boolean).join(" · "))}</span>`;
+
 // ------------------------------------------------------------- pitchers tab
 const pitcherState = { rows: [], cols: [] };
 function renderPitchers() {
@@ -119,10 +133,11 @@ function renderPitchers() {
   const ptOf = (r, t) => S.byPitcher[r.pitcher]?.[t];
   const cols = [
     { key: "rank", label: "#", cls: "rank", render: (r, i) => i + 1, csv: (r, i) => i + 1 },
-    { key: "name", label: "Pitcher", l: 1, cls: "name" },
-    { key: "hand", label: "Hand" },
-    ...(S.meta.has_roles ? [{ key: "role", label: "Role" }] : []),
-    { key: "n", label: "Pitches", render: r => f0(r.n) },
+    { key: "name", label: "Pitcher", l: 1, cls: "name",
+      render: r => nameCell(r, [`${r.hand}HP`, r.role, `${f0(r.n)} pitches`]) },
+    { key: "hand", label: "Hand", nx: 1 },
+    ...(S.meta.has_roles ? [{ key: "role", label: "Role", nx: 1 }] : []),
+    { key: "n", label: "Pitches", render: r => f0(r.n), nx: 1 },
     { key: "fb_velo", label: "FB velo", render: r => f1(r.fb_velo), title: "Primary fastball velocity" },
     { key: "stuff_plus", label: "Stuff+", render: r => stuffCell(r.stuff_plus), defaultSort: 1,
       csv: r => r.stuff_plus?.toFixed(1) },
@@ -136,7 +151,13 @@ function renderPitchers() {
     })),
   ];
   pitcherState.cols = cols;
-  pitcherState.rows = renderTable($("#p-table"), cols, rows, "pitchers", r => openPitcher(r.pitcher));
+  pitcherState.rows = renderTable($("#p-table"), displayOrder(cols, ["rank", "name", "stuff_plus", "grade"]), rows,
+    "pitchers", (r, tr) => openPitcher(r.pitcher, tr));
+  // "–" only appears when a pitch has a row but no score (the published season's 50-pitch minimum)
+  const dash = S.data.pitch_types.some(p => p.stuff_plus == null);
+  $("#p-key").textContent = dash
+    ? "In the pitch columns, – means he threw it but too few times to get a score (under 50 pitches); blank means he didn't throw it."
+    : "In the pitch columns, a blank cell means he didn't throw that pitch.";
   $("#p-count").textContent = `${rows.length} pitchers`;
 }
 
@@ -163,10 +184,11 @@ function renderPitches() {
   const rows = filteredPitches("t", typeFilter.t);
   const cols = [
     { key: "rank", label: "#", cls: "rank", render: (r, i) => i + 1, csv: (r, i) => i + 1 },
-    { key: "name", label: "Pitcher", l: 1, cls: "name" },
-    { key: "hand", label: "Hand" },
+    { key: "name", label: "Pitcher", l: 1, cls: "name",
+      render: r => nameCell(r, [ptName(r.pitch_type), `${r.hand}HP`, `${f0(r.n)} pitches`]) },
+    { key: "hand", label: "Hand", nx: 1 },
     { key: "pitch_type", label: "Pitch", l: 1, render: r => `<span class="dot" style="background:${ptColor(r.pitch_type)}"></span>${ptName(r.pitch_type)}` },
-    { key: "n", label: "Pitches", render: r => f0(r.n) },
+    { key: "n", label: "Pitches", render: r => f0(r.n), nx: 1 },
     { key: "usage", label: "Usage %", render: r => f1(r.usage), csv: r => r.usage?.toFixed(1) },
     { key: "velo", label: "Velo", render: r => f1(r.velo), csv: r => r.velo?.toFixed(1) },
     { key: "spin", label: "Spin", render: r => f0(r.spin), csv: r => r.spin?.toFixed(0) },
@@ -178,7 +200,10 @@ function renderPitches() {
     { key: "grade", label: "Grade", cls: "grade", title: "20-80 scale vs. same pitch type" },
   ];
   pitchState.cols = cols;
-  pitchState.rows = renderTable($("#t-table"), cols, rows, "pitches", r => openPitcher(r.pitcher));
+  pitchState.rows = renderTable($("#t-table"), displayOrder(cols, ["rank", "name", "stuff_plus", "grade"]), rows,
+    "pitches", (r, tr) => openPitcher(r.pitcher, tr));
+  $("#t-key").textContent = S.data.pitch_types.some(p => p.stuff_plus == null)
+    ? "– in Stuff+ means too few pitches to get a score (under 50)." : "";
   $("#t-count").textContent = `${rows.length} pitches`;
 }
 
@@ -257,11 +282,11 @@ function movementSVG(pitches, size = 300) {
 function trendSVG(seasons, w = 300, h = 140) {
   const pts = seasons.filter(s => s.stuff_plus != null);
   if (pts.length < 2) return `<p class="muted">Only one season of data.</p>`;
-  const m = { l: 34, r: 12, t: 12, b: 24 };
+  const m = { l: 34, r: 22, t: 12, b: 24 };  // r leaves room for the last year's label
   const ys = pts.map(p => p.stuff_plus), lo = Math.min(90, ...ys) - 2, hi = Math.max(110, ...ys) + 2;
   const yr = pts.map(p => p.year), x0 = Math.min(...yr), x1 = Math.max(...yr);
   const sx = v => m.l + (v - x0) / ((x1 - x0) || 1) * (w - m.l - m.r), sy = v => h - m.b - (v - lo) / (hi - lo) * (h - m.t - m.b);
-  let g = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`;
+  let g = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Stuff+ by season, ${x0} to ${x1}">`;
   for (const t of niceTicks(lo, hi, 4)) g += `<line class="${t === 100 ? "zero" : "axis"}" x1="${m.l}" x2="${w - m.r}" y1="${sy(t)}" y2="${sy(t)}"/><text x="${m.l - 5}" y="${sy(t) + 4}" text-anchor="end">${t}</text>`;
   g += `<polyline fill="none" stroke="var(--text)" stroke-width="2" points="${pts.map(p => `${sx(p.year)},${sy(p.stuff_plus)}`).join(" ")}"/>`;
   for (const p of pts) g += `<circle cx="${sx(p.year)}" cy="${sy(p.stuff_plus)}" r="4.5" fill="${stuffFill(p.stuff_plus)}" stroke="var(--text)"><title>${p.year}: ${f1(p.stuff_plus)}</title></circle><text x="${sx(p.year)}" y="${h - 6}" text-anchor="middle">${p.year}</text>`;
@@ -269,13 +294,29 @@ function trendSVG(seasons, w = 300, h = 140) {
 }
 
 // ------------------------------------------------------------- pitcher drawer
-async function openPitcher(id) {
+// Opening a pitcher is a navigation (#/pitchers/<slug>), so links and Back work.
+// The drawer is a modal dialog: the page behind it is inert while it is open.
+const D = { id: null, opener: null, pushed: false, seq: 0 };
+function openPitcher(id, from) {
+  D.opener = from?.querySelector?.(".name-btn") || from || document.activeElement;
+  const slug = S.slugOf[id];
+  if (!slug) return showPitcher(id);
+  D.pushed = true;
+  go({ slug });
+}
+function setInert(on) {
+  for (const e of [document.querySelector("header"), $("#demo-banner"), document.querySelector("main"),
+    document.querySelector("footer")]) e?.toggleAttribute("inert", on);
+}
+async function showPitcher(id) {
+  const seq = ++D.seq;
   const d = await api(`/api/pitcher/${id}`);
+  if (seq !== D.seq) return;
   const cur = d.seasons.find(s => s.year === S.season) || d.seasons[d.seasons.length - 1];
   const arsenal = d.pitch_types.filter(p => p.year === cur.year);
   const body = $("#drawer-body");
   body.innerHTML = `
-    <h2>${esc(cur.name)}</h2>
+    <h2 id="drawer-title" tabindex="-1">${esc(cur.name)}</h2>
     <div class="muted">${cur.hand}HP${cur.role ? " · " + cur.role : ""} · ${cur.year} · ${f0(cur.n)} pitches</div>
     <div class="stats">
       <div><div class="label">Stuff+</div><div class="big">${f0(cur.stuff_plus)}</div></div>
@@ -287,7 +328,7 @@ async function openPitcher(id) {
       <div class="card"><h3>Movement</h3>${movementSVG(arsenal, 300)}</div>
       <div class="card"><h3>Stuff+ by season</h3>${trendSVG(d.seasons)}</div>
     </div>
-    <button id="d-grade">Open this arsenal in the grader</button>`;
+    <button type="button" id="d-grade">Open this arsenal in the grader</button>`;
   S.sort["drawer:" + id] ||= { col: "usage", asc: false };
   renderTable($("#d-table"), [
     { key: "pitch_type", label: "Pitch", l: 1, render: r => `<span class="dot" style="background:${ptColor(r.pitch_type)}"></span>${ptName(r.pitch_type)}` },
@@ -299,12 +340,52 @@ async function openPitcher(id) {
     { key: "stuff_plus", label: "Stuff+", render: r => stuffCell(r.stuff_plus) },
     { key: "grade", label: "Grade", cls: "grade" },
   ], arsenal, "drawer:" + id);
-  $("#d-grade").onclick = () => { loadArsenal(cur.hand, arsenal); closeDrawer(); switchTab("grader"); };
+  $("#d-grade").onclick = () => {
+    loadArsenal(cur.hand, arsenal);
+    D.pushed = false; D.opener = null; hideDrawer();
+    go({ tab: "grader" }, true);  // replaces the drawer's history entry
+  };
+  const wasOpen = !$("#drawer").hidden;
+  D.id = id;
   $("#drawer").hidden = false;
+  if (!wasOpen) setInert(true);
+  $("#drawer-title").focus();
 }
-function closeDrawer() { $("#drawer").hidden = true; }
+// hide without touching history (the route already says "no drawer")
+function hideDrawer() {
+  D.seq++;  // drop a pitcher still loading
+  if ($("#drawer").hidden) return;
+  const id = D.id;
+  $("#drawer").hidden = true; D.id = null; D.pushed = false; setInert(false);
+  const back = D.opener?.isConnected && D.opener !== document.body ? D.opener
+    : document.querySelector(`.tab.active [data-pid="${id}"]`);
+  back?.focus(); D.opener = null;
+}
+// the user closes it: undo the navigation that opened it
+function closeDrawer() {
+  if ($("#drawer").hidden) return;
+  if (D.pushed) history.back();  // hashchange hides it
+  else go({ tab: S.tab }, true);
+}
 
 // ------------------------------------------------------------- grader
+// spoken names for the grader's columns ("Four-seam velocity (mph)")
+const G_SPOKEN = { usage: "usage (%)", velo: "velocity (mph)", spin: "spin rate (rpm)", ivb: "induced vertical break (in)",
+  hb: "horizontal break (in)", ext: "extension (ft)", rel_height: "release height (ft)", rel_side: "release side (ft)",
+  spin_axis: "spin axis (degrees)", arm_angle: "arm angle (degrees)" };
+function gLabels(i) {
+  const t = G.pitches[i].pitch_type, dup = G.pitches.filter(p => p.pitch_type === t).length > 1;
+  const name = ptName(t) + (dup ? ` (row ${i + 1})` : "");
+  return { type: `Pitch type, row ${i + 1}`, del: `Remove ${name}`, field: k => `${name} ${G_SPOKEN[k]}` };
+}
+function labelGraderRows() {
+  $("#g-table").querySelectorAll("tbody tr").forEach(tr => {
+    const L = gLabels(+tr.dataset.i);
+    tr.querySelectorAll("[data-k]").forEach(e => e.setAttribute("aria-label",
+      e.dataset.k === "pitch_type" ? L.type : L.field(e.dataset.k)));
+    tr.querySelector("[data-del]")?.setAttribute("aria-label", L.del);
+  });
+}
 const G_FIELDS = [
   ["usage", "Usage %", 1, false, "Share of pitches thrown"], ["velo", "Velo", 0.1, false, "Release speed (mph)"],
   ["spin", "Spin", 10, false, "Spin rate (rpm)"], ["ivb", "IVB", 0.1, false, "Induced vertical break (in)"],
@@ -363,9 +444,11 @@ function renderGraderInputs() {
     G_FIELDS.map(([k, , step, opt]) => `<td><input type="number" data-k="${k}" step="${step}" value="${p[k] ?? ""}" ${opt ? 'class="opt" placeholder="auto"' : ""}></td>`).join("")
     }<td><button class="icon" data-del="${i}" title="Remove" aria-label="Remove pitch">✕</button></td></tr>`).join("");
   const t = $("#g-table"); t.innerHTML = head + `<tbody>${body}</tbody>`;
+  labelGraderRows();
   t.querySelectorAll("input, select").forEach(inp => inp.oninput = () => {
     const i = +inp.closest("tr").dataset.i, k = inp.dataset.k;
     G.pitches[i][k] = k === "pitch_type" ? inp.value : (inp.value === "" ? null : +inp.value);
+    if (k === "pitch_type") labelGraderRows();
     if (G.customId) $("#g-saved").textContent = "Unsaved changes";
     saveG(); scheduleGrade();
   });
@@ -519,23 +602,108 @@ function openCustom(id) {
   G.pitches = r.pitches.map(p => ({ ...p }));
   $("#g-note").dataset.src = `Editing your saved pitcher “${r.name}”.`;
   $("#g-saved").textContent = "";
-  saveG(); renderGraderInputs(); gradeNow(); switchTab("grader");
+  saveG(); renderGraderInputs(); gradeNow(); go({ tab: "grader" });
 }
 
-// ------------------------------------------------------------- tabs & boot
-function switchTab(name) {
-  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+// ------------------------------------------------------------- routes, tabs & boot
+// #/pitchers  #/pitches  #/explore  #/grade  #/my-pitchers  #/pitchers/<slug>  (+ ?season=YYYY)
+const ROUTES = { pitchers: "pitchers", pitches: "pitches", explore: "explore", grader: "grade", custom: "my-pitchers" };
+const TAB_OF = Object.fromEntries(Object.entries(ROUTES).map(([k, v]) => [v, k]));
+function slugify(name) {
+  const n = String(name || "").includes(",") ? name.split(",").map(x => x.trim()).reverse().join(" ") : String(name || "");
+  return n.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+function buildSlugs() {
+  const names = {};
+  for (const r of [...S.data.pitchers, ...S.data.pitch_types]) names[r.pitcher] ??= r.name;
+  const count = {};
+  for (const n of Object.values(names)) count[slugify(n)] = (count[slugify(n)] || 0) + 1;
+  S.slugOf = {}; S.slugIds = {};
+  for (const [id, n] of Object.entries(names)) {
+    const base = slugify(n) || "pitcher", slug = count[base] > 1 ? `${base}-${id}` : base;
+    S.slugOf[id] = slug; S.slugIds[slug] = +id;
+  }
+}
+function routeHash({ tab, slug, season = S.season }) {
+  const q = season && season !== S.meta.latest_season ? `?season=${season}` : "";
+  return "#/" + (slug ? `pitchers/${slug}` : ROUTES[tab] || "pitchers") + q;
+}
+function parseHash() {
+  const m = location.hash.match(/^#\/([\w-]+)(?:\/([\w-]+))?\/?(?:\?(.*))?$/);
+  if (!m) return {};
+  return { tab: TAB_OF[m[1]], slug: m[1] === "pitchers" ? m[2] : null,
+    season: +new URLSearchParams(m[3] || "").get("season") || null };
+}
+// navigate inside the app; Back/Forward and edited URLs arrive through hashchange
+function go(route, replace) {
+  const h = routeHash(route);
+  if (h !== location.hash) history[replace ? "replaceState" : "pushState"](null, "", h);
+  return applyRoute();
+}
+let routing = Promise.resolve();
+const applyRoute = () => (routing = routing.then(applyRouteNow, applyRouteNow));
+async function applyRouteNow() {
+  const r = parseHash();
+  const season = S.meta.seasons.includes(r.season) ? r.season : S.meta.latest_season;
+  if (season !== S.season) { $("#season").value = season; await loadSeason(season); }
+  if (r.slug) {
+    if (!S.tab) showTab("pitchers");
+    const id = S.slugIds[r.slug];
+    if (id == null) { hideDrawer(); history.replaceState(null, "", routeHash({ tab: S.tab })); return; }
+    if (D.id !== id) await showPitcher(id);
+    return;
+  }
+  hideDrawer();
+  const tab = r.tab || S.tab || "pitchers";
+  if (!r.tab) history.replaceState(null, "", routeHash({ tab }));
+  showTab(tab);
+}
+function switchTab(name) { go({ tab: name }); }
+function showTab(name) {
+  if (name === S.tab) return;
+  S.tab = name;
+  document.querySelectorAll("#tabs button").forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle("active", on); b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1;
+  });
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + name));
   if (name === "explore") renderExplore();
   if (name === "custom") loadCustom();
   try { localStorage.setItem("stuffplus.tab", name); } catch (e) { /* ignore */ }
 }
+function wireTabs() {
+  const btns = [...document.querySelectorAll("#tabs button")];
+  btns.forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+  $("#tabs").addEventListener("keydown", e => {
+    const i = btns.indexOf(document.activeElement); if (i < 0) return;
+    const j = { ArrowRight: (i + 1) % btns.length, ArrowLeft: (i - 1 + btns.length) % btns.length,
+      Home: 0, End: btns.length - 1 }[e.key];
+    if (j == null) return;
+    e.preventDefault(); btns[j].focus(); switchTab(btns[j].dataset.tab);
+  });
+}
+// plain-language season line up top; the technical notes live under Methodology
+function seasonLine(season) {
+  return `${season} season${S.meta.frozen ? " · scores adjusted for small samples" : ""}`;
+}
+function renderMethodology() {
+  const m = S.meta;
+  const notes = [...m.seasons].reverse().map(y => m.season_notes[y] ? `<li>${y}: ${esc(m.season_notes[y])}</li>` : "").join("");
+  $("#method-body").innerHTML = `
+    <p>Stuff+ grades each pitch from its physical traits (velocity, spin, movement, release and extension), not
+      from results, then averages a pitcher's pitches. 100 is league average${m.spread ? " and 10 points is one standard deviation" : ""}.
+      Grades put the same number on the 20–80 scouting scale.${m.frozen ? " Scores are shrunk toward average for pitchers with few pitches." : ""}</p>
+    <p>Model: ${esc(m.label)}${m.synthetic ? " · synthetic demo data" : ""}. Built ${esc(m.built_at)}.</p>
+    <p>Features: ${esc(m.features.join(", "))}.</p>
+    ${notes ? `<ul>${notes}</ul>` : ""}`;
+}
 async function loadSeason(season) {
   S.season = season;
-  $("#season-note").textContent = S.meta.season_notes[season] || "";
+  $("#season-note").textContent = seasonLine(season);
   S.data = await api(`/api/leaderboard/${season}`);
   S.byPitcher = {};
   for (const p of S.data.pitch_types) (S.byPitcher[p.pitcher] ||= {})[p.pitch_type] = p;
+  buildSlugs();
   renderTypeChips("t-types", typeFilter.t, renderPitches);
   renderTypeChips("x-types", typeFilter.x, renderExplore);
   renderPitchers(); renderPitches();
@@ -546,14 +714,13 @@ async function loadSeason(season) {
 async function boot() {
   S.meta = await api("/api/meta");
   const m = S.meta, tr = m.train_years;
-  $("#model-info").textContent = m.label;
-  $("#model-info").title = `Features: ${m.features.join(", ")}\nBuilt ${m.built_at}`;
+  renderMethodology();
   $("#demo-banner").hidden = !m.synthetic;
   if (m.has_roles) $("#p-role").hidden = false;
   if (m.synthetic) { $("#p-min").value = 100; }
   $("#season").innerHTML = [...m.seasons].reverse().map(s => `<option>${s}</option>`).join("");
-  $("#season").onchange = e => loadSeason(+e.target.value);
-  document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+  $("#season").onchange = e => go({ tab: S.tab, season: +e.target.value });
+  wireTabs();
   ["p-search", "p-min"].forEach(id => $("#" + id).oninput = renderPitchers);
   ["t-search", "t-min"].forEach(id => $("#" + id).oninput = renderPitches);
   $("#x-min").oninput = renderExplore;
@@ -568,11 +735,14 @@ async function boot() {
   window.addEventListener("resize", () => { if ($("#tab-explore").classList.contains("active")) renderExplore(); });
   $("#drawer-close").onclick = closeDrawer;
   $("#drawer").onclick = e => { if (e.target.id === "drawer") closeDrawer(); };
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
-  $("#c-new").onclick = () => { $("#g-reset").click(); switchTab("grader"); $("#g-name").focus(); };
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#drawer").hidden) closeDrawer(); });
+  $("#c-new").onclick = () => { $("#g-reset").click(); go({ tab: "grader" }).then(() => $("#g-name").focus()); };
   restoreG(); wireGrader(); wireCustom(); renderGraderInputs();
-  await loadSeason(m.latest_season);
-  let tab = "pitchers"; try { tab = localStorage.getItem("stuffplus.tab") || tab; } catch (e) { /* ignore */ }
-  switchTab(tab);
+  window.addEventListener("hashchange", applyRoute);
+  if (!parseHash().tab) {  // no link: reopen the last tab
+    let tab = "pitchers"; try { tab = localStorage.getItem("stuffplus.tab") || tab; } catch (e) { /* ignore */ }
+    history.replaceState(null, "", "#/" + (ROUTES[tab] || "pitchers"));
+  }
+  await applyRoute();
 }
 boot().catch(e => { document.querySelector("main").innerHTML = `<div class="card">Failed to load: ${esc(e.message)}</div>`; });

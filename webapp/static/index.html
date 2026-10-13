@@ -11,14 +11,14 @@
 <header>
   <div class="brand">
     <h1>Stuff<span>+</span></h1>
-    <span id="model-info" class="muted"></span>
+    <span id="model-info" class="muted">Pitch quality for every MLB pitcher</span>
   </div>
-  <nav id="tabs">
-    <button data-tab="pitchers" class="active">Pitchers</button>
-    <button data-tab="pitches">Pitches</button>
-    <button data-tab="explore">Explore</button>
-    <button data-tab="grader">Grade a pitcher</button>
-    <button data-tab="custom">My pitchers</button>
+  <nav id="tabs" role="tablist" aria-label="Views">
+    <button type="button" role="tab" id="tabbtn-pitchers" aria-controls="tab-pitchers" aria-selected="true" data-tab="pitchers" class="active">Pitchers</button>
+    <button type="button" role="tab" id="tabbtn-pitches" aria-controls="tab-pitches" aria-selected="false" tabindex="-1" data-tab="pitches">Pitches</button>
+    <button type="button" role="tab" id="tabbtn-explore" aria-controls="tab-explore" aria-selected="false" tabindex="-1" data-tab="explore">Explore</button>
+    <button type="button" role="tab" id="tabbtn-grader" aria-controls="tab-grader" aria-selected="false" tabindex="-1" data-tab="grader">Grade a pitcher</button>
+    <button type="button" role="tab" id="tabbtn-custom" aria-controls="tab-custom" aria-selected="false" tabindex="-1" data-tab="custom">My pitchers</button>
   </nav>
   <label class="season">Season <select id="season"></select></label>
 </header>
@@ -29,9 +29,9 @@
 <main>
   <p id="season-note" class="muted small note"></p>
   <!-- Pitchers -->
-  <section id="tab-pitchers" class="tab active">
+  <section id="tab-pitchers" class="tab active" role="tabpanel" aria-labelledby="tabbtn-pitchers">
     <div class="controls">
-      <input id="p-search" type="search" placeholder="Search pitcher">
+      <input id="p-search" type="search" placeholder="Search pitcher" aria-label="Search pitchers">
       <div class="seg" id="p-hand"><button data-v="" class="on">All</button><button data-v="R">RHP</button><button data-v="L">LHP</button></div>
       <div class="seg" id="p-role" hidden><button data-v="" class="on">All</button><button data-v="SP">SP</button><button data-v="RP">RP</button></div>
       <label>Min pitches <input id="p-min" type="number" value="250" min="0" step="50"></label>
@@ -39,13 +39,15 @@
       <span id="p-count" class="muted"></span>
       <button id="p-csv" class="ghost">Download CSV</button>
     </div>
+    <p class="explain muted small">Stuff+: 100 = league average, higher is better. Grade is on the 20–80 scouting scale.
+      <span id="p-key"></span></p>
     <div class="table-wrap"><table id="p-table"></table></div>
   </section>
 
   <!-- Pitches -->
-  <section id="tab-pitches" class="tab">
+  <section id="tab-pitches" class="tab" role="tabpanel" aria-labelledby="tabbtn-pitches">
     <div class="controls">
-      <input id="t-search" type="search" placeholder="Search pitcher">
+      <input id="t-search" type="search" placeholder="Search pitcher" aria-label="Search pitchers">
       <div class="chips" id="t-types"></div>
       <div class="seg" id="t-hand"><button data-v="" class="on">All</button><button data-v="R">RHP</button><button data-v="L">LHP</button></div>
       <label>Min pitches <input id="t-min" type="number" value="50" min="0" step="25"></label>
@@ -53,11 +55,13 @@
       <span id="t-count" class="muted"></span>
       <button id="t-csv" class="ghost">Download CSV</button>
     </div>
+    <p class="explain muted small">Stuff+: 100 = league average, higher is better. Grade is on the 20–80 scouting scale.
+      <span id="t-key"></span></p>
     <div class="table-wrap"><table id="t-table"></table></div>
   </section>
 
   <!-- Explore -->
-  <section id="tab-explore" class="tab">
+  <section id="tab-explore" class="tab" role="tabpanel" aria-labelledby="tabbtn-explore">
     <div class="controls">
       <label>X <select id="x-axis"></select></label>
       <label>Y <select id="y-axis"></select></label>
@@ -78,7 +82,7 @@
   </section>
 
   <!-- My pitchers -->
-  <section id="tab-custom" class="tab">
+  <section id="tab-custom" class="tab" role="tabpanel" aria-labelledby="tabbtn-custom">
     <div class="controls">
       <span class="muted">Pitchers you've saved from the grader, graded live with the current model and season scale.</span>
       <span class="spacer"></span>
@@ -94,27 +98,27 @@
   </section>
 
   <!-- Grader -->
-  <section id="tab-grader" class="tab">
+  <section id="tab-grader" class="tab" role="tabpanel" aria-labelledby="tabbtn-grader">
     <div class="grader">
       <div class="card">
         <div class="controls tight">
           <div class="seg" id="g-hand"><button data-v="R" class="on">RHP</button><button data-v="L">LHP</button></div>
           <div class="loader">
-            <input id="g-load" type="search" placeholder="Start from an MLB pitcher's arsenal…" autocomplete="off">
+            <input id="g-load" type="search" placeholder="Start from an MLB pitcher's arsenal…" aria-label="Start from an MLB pitcher's arsenal" autocomplete="off">
             <div id="g-load-list" class="dropdown" hidden></div>
           </div>
           <span class="spacer"></span>
           <button id="g-reset" class="ghost">Reset</button>
         </div>
         <div class="controls tight">
-          <input id="g-name" type="text" placeholder="Name this pitcher to save it" maxlength="80">
+          <input id="g-name" type="text" placeholder="Name this pitcher to save it" aria-label="Name this pitcher" maxlength="80">
           <button id="g-save">Save pitcher</button>
           <button id="g-save-new" class="ghost" hidden>Save as new</button>
           <span id="g-saved" class="muted small"></span>
         </div>
         <div class="table-wrap"><table id="g-table" class="inputs"></table></div>
         <div class="controls tight">
-          <select id="g-add-type"></select>
+          <select id="g-add-type" aria-label="Pitch type to add"></select>
           <button id="g-add">Add pitch</button>
           <span class="muted small">Movement is in inches like Baseball Savant: HB is positive toward the arm side. Spin axis and arm angle are optional.</span>
         </div>
@@ -133,10 +137,17 @@
   </section>
 </main>
 
+<footer>
+  <details id="methodology">
+    <summary>Methodology</summary>
+    <div id="method-body" class="muted small"></div>
+  </details>
+</footer>
+
 <!-- Pitcher drawer -->
 <div id="drawer" class="drawer" hidden>
-  <div class="drawer-inner">
-    <button id="drawer-close" class="ghost close" aria-label="Close">✕</button>
+  <div class="drawer-inner" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <button type="button" id="drawer-close" class="ghost close" aria-label="Close">✕</button>
     <div id="drawer-body"></div>
   </div>
 </div>
