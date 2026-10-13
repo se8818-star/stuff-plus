@@ -261,7 +261,10 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     fb = pt[pt["pitch_type"].isin(["FF", "SI", "FC"])].sort_values("n", ascending=False) \
         .drop_duplicates(keys)[keys + ["velo"]].rename(columns={"velo": "fb_velo"})
     tot = tot.merge(fb, on=keys, how="left")
-    roles = roles_by_season(sc)
+    # Roles from every pitch final.py counts (those with a run value), before
+    # rows with missing features are dropped: a starter whose first pitch of a
+    # game has no spin reading still started it. Matches final.roles.
+    roles = roles_by_season(df[df["target"].notna()] if "target" in df else df)
     if roles is not None:
         tot = tot.merge(roles.reset_index(), on=keys, how="left")
 

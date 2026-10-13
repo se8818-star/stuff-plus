@@ -395,3 +395,32 @@ def test_published_season_keeps_unqualified_pitchers(v110_paths):
     pub_rows = t["pitcher"].isin(published) & (t["pitch_type"] == "FF")
     assert (t.loc[pub_rows, "stuff_plus"] == 140.0).all() and len(t) == len(own_t)
     assert t["stuff_plus"].notna().all() and (t.loc[~pub_rows, "stuff_plus"] != 140.0).all()
+
+
+def test_roles_use_pitches_with_missing_features(v110_paths, monkeypatch):
+    """A pitch with a missing feature can't be scored, but it still counts for
+    who started the game, as in final.roles."""
+    import final
+    from webapp import build as wb
+    site = v110_paths
+    df = site["df"].copy()
+    # pitchers 0 and 1 share four games a season: 0 throws the first 30 pitches, 1 the rest
+    pair = df["pitcher"].isin([0, 1])
+    seq = df.groupby(["pitcher", "year"]).cumcount()
+    df["game_pk"] = df["year"] * 1000 + np.where(pair, seq // 30, 100 + df["pitcher"])
+    df["inning_topbot"] = "Top"
+    df["at_bat_number"] = seq + np.where(df["pitcher"] == 1, 1000, 0)
+    df["pitch_number"] = 1
+    # the starter's pitches in three of the four games have no spin reading
+    df.loc[(df["pitcher"] == 0) & (seq < 90), "spin_rate"] = np.nan
+    monkeypatch.setattr(wb, "load_synthetic", lambda *a, **k: df.copy())
+    b = joblib.load(wb.build(synthetic=True, frozen=site["meta"], synth_size=site["size"],
+                             out=site["models"] / "roles.joblib", spread=None))
+    board = b["pitchers"].set_index(["pitcher", "year"])
+    want = final.roles(df[df["year"] == 2026])
+    for pid in (0, 1):
+        row = board.loc[(pid, 2026)]
+        assert (row["games"], row["gs"], row["role"]) == tuple(want.loc[pid, ["g", "gs", "role"]])
+    assert board.loc[(0, 2026), "role"] == "SP" and board.loc[(0, 2026), "gs"] == 4
+    assert board.loc[(1, 2026), "role"] == "RP" and board.loc[(1, 2026), "gs"] == 0
+    assert board.loc[(0, 2026), "n"] == 30                 # only the scoreable pitches are graded
