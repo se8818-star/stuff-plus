@@ -146,6 +146,11 @@ excluding zero. Neither candidate did; J's development lead reversed. At 300
 and 500 pitches S6 trails the baseline by 0.04–0.05 on both result
 correlations (intervals include zero).
 
+The locked confirmation scored pitchers with a model trained on their earlier
+seasons, which can favor features that identify a pitcher (A's release point
+and extension); E1's out-of-pitcher comparison, below, is the check that A
+still leads without that.
+
 Also examined and dropped before pre-registration: approach angles on a 3×3
 zone grid. The 18 grid angles span two dimensions (two principal components
 explain 100.00% of their variance), so the grid collapses to its centre point.
@@ -172,7 +177,9 @@ training from 2020). Stuff+ (no remembering) minus Stuff+:
 
 Not remembering the pitcher costs about 0.037 in next-season correlation
 (0.272 → 0.235), in every split, with intervals that exclude zero. The
-remembered part is real skill the ten inputs cannot see (command, deception).
+remembered part is persistent, pitcher-specific signal the ten inputs cannot
+see. It may include command and deception, but also park, team defense and
+catcher framing, so it is not all the pitcher's own skill.
 The two scores correlate 0.93–0.97 across pitchers.
 
 ### Overfitting check
@@ -196,8 +203,9 @@ saw that pitcher (out-of-pitcher), and with later seasons.
 - Out-of-sample fit is stable: R² is the same for unseen pitchers and for the
   next two seasons, so nothing degrades over time.
 - Memorised pitchers are predicted **better** the following season (0.30
-  against 0.19), because a pitcher's past results carry real information
-  (command, deception) that the ten physical inputs do not. A score for a
+  against 0.19), because a pitcher's past results carry persistent,
+  pitcher-specific signal the ten physical inputs do not (possibly command and
+  deception, but also park, team defense and catcher framing). A score for a
   pitcher the model has trained on is therefore partly a record of how that
   pitcher has performed, not purely a grade of the pitch's physical traits.
   The next-season validation tables above are of this kind, since most
@@ -223,8 +231,13 @@ saw that pitcher (out-of-pitcher), and with later seasons.
 - Pitcher scores correlate 0.95 (0.95 for the 596 pitchers with earlier seasons,
   0.97 for the 124 who debuted in 2026). The median difference is 0.6 points and
   3% of pitchers differ by more than 3. 19 of the top 25 overlap (at least 500 pitches).
-- Stuff+ is furthest above the physical grade for Hoby Milner (89.4 → 96.5), Devin Williams (99.8 → 106.0), Tyler Wells (89.2 → 95.2).
-- It is furthest below for Caleb Thielbar (106.4 → 100.9), Tanner Bibee (96.2 → 92.4), Mason Miller (116.4 → 112.7).
+- The largest gap overall is Danny Coulombe (385 pitches): 82.6 without
+  remembering, 102.6 with, a difference of 20 points. The next largest is under 8.
+- Among pitchers with at least 500 pitches, Stuff+ is furthest above the
+  physical grade for Hoby Milner (89.4 → 96.5), Devin Williams (99.8 → 106.0)
+  and Tyler Wells (89.2 → 95.2).
+- It is furthest below for Caleb Thielbar (106.4 → 100.9), Tanner Bibee
+  (96.2 → 92.4) and Mason Miller (116.4 → 112.7).
 
 Differences reflect what Stuff+ has learned about a pitcher from earlier
 seasons and, to a lesser extent, that its leaderboard model was trained without
