@@ -220,3 +220,41 @@ def test_custom_pitchers(bundle_file, tmp_path):
     assert c.delete(f"/api/custom/{made['id']}").status_code == 200
     assert c.get("/api/custom").json() == []
     assert c.delete(f"/api/custom/{made['id']}").status_code == 404
+
+
+@pytest.mark.parametrize("kind", ["scaling", "bundle"])
+def test_folds_step_exits_early_for_v110_models(tmp_path, monkeypatch, kind):
+    """webapp.folds is only for v1.0.0: a v1.1.0+ model already ships its fold
+    models, so the step stops before loading any data or fitting anything."""
+    import json
+
+    import features
+    from webapp import folds
+
+    meta = {"version": "1.1.0", "features": ["start_speed"], "target": "target", "train_years": [2022],
+            "seeds": [0], "lightgbm_params": {},
+            "scaling": {"xrv_mean": 0.0, "xrv_sd": 1.0, "season": 2026} if kind == "scaling" else
+                       {"oof_xrv_mean": 0.0, "oof_xrv_sd": 1.0, "season": 2026}}
+    path = tmp_path / "stuffplus_no_remembering_v1.1.0.json"
+    path.write_text(json.dumps(meta))
+    joblib.dump({"fold_models": [], "pitcher_fold": {}, "features": []} if kind == "bundle" else [],
+                path.with_suffix(".joblib"))
+
+    def boom(*a, **k):
+        raise AssertionError("data was loaded")
+
+    monkeypatch.setattr(features, "load", boom)
+    monkeypatch.setattr(folds, "fit_folds", boom)
+    with pytest.raises(SystemExit) as e:
+        folds.main(["--model", str(path)])
+    assert "isn't needed" in str(e.value) and "v1.0.0" in str(e.value)
+    assert not folds.folds_path(path).exists()
+
+
+def test_folds_step_still_recognises_a_v100_model(tmp_path):
+    from webapp import folds
+    meta = {"version": "1.0.0", "scaling": {"oof_xrv_mean": 0.0, "oof_xrv_sd": 1.0, "season": 2026}}
+    path = tmp_path / "stuffplus_v1.0.0.json"
+    joblib.dump([], path.with_suffix(".joblib"))                 # v1.0.0 saved a plain list of models
+    assert not folds.already_has_folds(meta, path)
+    assert not folds.already_has_folds(meta, tmp_path / "missing.json")

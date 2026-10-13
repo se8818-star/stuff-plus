@@ -1,13 +1,13 @@
 """
 Run the local Stuff+ website:  python serve.py   ->  http://127.0.0.1:8000
 
-On first run it builds the leaderboards (webapp/build.py). With data/ and a
-frozen model in models/ (final.py's stuffplus_v<version>), it shows that model
-and its published leaderboards; with data/ only, it trains a variant; with
-neither, it serves a synthetic demo.
+On first run it builds the leaderboards (webapp/build.py). With data/ and the
+shipped models in models/ (final.py), it shows Stuff+ (no remembering) and its
+published leaderboards, every season and the grader out-of-fold; with data/
+only, it trains a variant; with neither, it serves a synthetic demo.
 
-    python -m webapp.folds                 # once: the leaderboard's out-of-fold models, so
-                                           # every season and the grader are out-of-fold
+    python -m webapp.folds --model models/stuffplus_v1.0.0.json
+                                           # only for a v1.0.0 model; v1.1.0+ needs no extra step
     python serve.py --synthetic            # force the demo data
     python serve.py --rebuild              # rebuild after new data / code changes
     python serve.py --variant B_plus_center --train 2022 2023 2024 2025   # train instead

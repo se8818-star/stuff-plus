@@ -11,9 +11,10 @@ scores every season, and writes a single joblib bundle under models/
 (gitignored) with the model, scaling constants, leaderboards, and 20-80 grade
 constants. The existing ablation code is imported, not changed.
 
-With the frozen model's fold models (python -m webapp.folds), and always for
-the synthetic demo, every season is scored out-of-fold like the published
-leaderboard: each pitcher by a model that never saw his pitches. Otherwise
+With the frozen model's fold models, and always for the synthetic demo, every
+season is scored out-of-fold like the published leaderboard: each pitcher by a
+model that never saw his pitches. A v1.1.0+ no-remembering bundle carries its
+fold models; a v1.0.0 model needs `python -m webapp.folds` once. Otherwise
 seasons inside the training window are in-sample.
 """
 from __future__ import annotations
@@ -172,7 +173,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
             model = AveragedModel(art, feats)
             print(f"using {label}: {Path(frozen).name}. No {fp.name}, so the grader and the seasons "
                   "before the published one use this full model (in-sample); "
-                  "run `python -m webapp.folds` to score them out-of-fold.")
+                  "for a v1.0.0 model, run `python -m webapp.folds` to score them out-of-fold "
+                  "(v1.1.0+ models carry their fold models and never reach this path).")
     elif synthetic and not train:
         feats, train = VARIANTS[variant], seasons
         label = f"{variant} · out-of-fold"

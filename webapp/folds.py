@@ -1,9 +1,14 @@
 """
-Save the leaderboard's out-of-fold models so the website can use them.
+Save a v1.0.0 leaderboard's out-of-fold models so the website can use them.
 
-    python -m webapp.folds      # writes models/stuffplus_v<version>_folds.joblib
+    python -m webapp.folds --model models/stuffplus_v1.0.0.json
+                                # writes models/stuffplus_v1.0.0_folds.joblib
 
-final.py scores the published leaderboards out-of-fold: 5-fold GroupKFold by
+Only for v1.0.0 models. From v1.1.0, final.py saves the fold models itself in
+models/stuffplus_no_remembering_v<version>.joblib and the website reads them
+from there, so this step is not needed and exits straight away.
+
+v1.0.0's final.py scores the published leaderboards out-of-fold: 5-fold GroupKFold by
 pitcher over 2022-2026, each fold three LightGBM seeds averaged, so no pitcher
 is scored by a model that saw his pitches. It keeps only the predictions. This
 refits exactly those fold models (same pitches, folds, settings and seeds),
@@ -93,17 +98,35 @@ def check_published(models, pitcher_fold, df, meta):
     return out
 
 
-def main():
+def already_has_folds(meta, meta_path):
+    """True for a v1.1.0+ model: its metadata has `xrv_mean` scaling rather than
+    `oof_xrv_mean`, or its joblib is a dict holding `fold_models`."""
+    if "xrv_mean" in meta.get("scaling", {}):
+        return True
+    artifact = Path(meta_path).with_suffix(".joblib")
+    if artifact.exists():
+        saved = joblib.load(artifact)
+        return isinstance(saved, dict) and "fold_models" in saved
+    return False
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", type=Path,
-                    help="frozen model metadata JSON (default: the newest models/stuffplus_v*.json)")
-    a = ap.parse_args()
+                    help="frozen model metadata JSON (default: the model the website would use)")
+    a = ap.parse_args(argv)
     sys.stdout.reconfigure(line_buffering=True)
     from webapp.build import frozen_meta
     meta_path = a.model or frozen_meta()
     if meta_path is None:
         raise SystemExit("No frozen model in models/. Run `python final.py` first.")
     meta = json.loads(Path(meta_path).read_text())
+    if already_has_folds(meta, meta_path):          # before any data loading or fitting
+        raise SystemExit(
+            f"{Path(meta_path).name} is a v{meta.get('version', '1.1.0+')} model: the fold models are already in "
+            "the no-remembering bundle (models/stuffplus_no_remembering_v<version>.joblib) and the website "
+            "reads them from there. This step isn't needed; it is only for v1.0.0 models "
+            "(`python -m webapp.folds --model models/stuffplus_v1.0.0.json`).")
     feats, target = meta["features"], meta["target"]
 
     # the same pitches, in the same order, as final.py
