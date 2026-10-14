@@ -17,6 +17,7 @@
     <button type="button" role="tab" id="tabbtn-pitchers" aria-controls="tab-pitchers" aria-selected="true" data-tab="pitchers" class="active">Pitchers</button>
     <button type="button" role="tab" id="tabbtn-pitches" aria-controls="tab-pitches" aria-selected="false" tabindex="-1" data-tab="pitches">Pitches</button>
     <button type="button" role="tab" id="tabbtn-explore" aria-controls="tab-explore" aria-selected="false" tabindex="-1" data-tab="explore">Explore</button>
+    <button type="button" role="tab" id="tabbtn-explore3d" aria-controls="tab-explore3d" aria-selected="false" tabindex="-1" data-tab="explore3d">3D Explore</button>
     <button type="button" role="tab" id="tabbtn-grader" aria-controls="tab-grader" aria-selected="false" tabindex="-1" data-tab="grader">Grade a pitcher</button>
     <button type="button" role="tab" id="tabbtn-custom" aria-controls="tab-custom" aria-selected="false" tabindex="-1" data-tab="custom">My pitchers</button>
   </nav>
@@ -77,6 +78,35 @@
         <div class="scale"><span>70</span><div class="bar"></div><span>130</span></div>
         <p class="muted">Hover for details, click a dot to open the pitcher.</p>
         <div id="x-corr" class="muted"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 3D Explore -->
+  <section id="tab-explore3d" class="tab" role="tabpanel" aria-labelledby="tabbtn-explore3d">
+    <div class="controls">
+      <div class="chips" id="z-types"></div>
+      <div class="seg" id="z-hand"><button data-v="" class="on">All</button><button data-v="R">RHP</button><button data-v="L">LHP</button></div>
+      <label>Min pitches <input id="z-min" type="number" value="50" min="0" step="25"></label>
+      <div class="seg" id="z-color" role="group" aria-label="Colour by"><button data-v="stuff" class="on">Stuff+</button><button data-v="type">Pitch type</button></div>
+    </div>
+    <div class="explore">
+      <div class="card plot3d">
+        <canvas id="cube" tabindex="0" role="img"></canvas>
+        <div class="controls tight cube-tools">
+          <span class="muted small">Drag to rotate · scroll or pinch to zoom · Shift-drag or two fingers to move · arrow keys work too</span>
+          <span class="spacer"></span>
+          <button type="button" class="ghost" id="z-zoom-out" aria-label="Zoom out">−</button>
+          <button type="button" class="ghost" id="z-zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" class="ghost" id="z-reset">Reset view</button>
+        </div>
+      </div>
+      <aside class="card legend-card">
+        <h3>How to read it</h3>
+        <p>Each dot is one pitcher's pitch type this season, placed by horizontal break (−25 to 25 in), induced vertical break (−25 to 25 in) and velocity (65 to 100 mph).</p>
+        <div id="z-legend"></div>
+        <p class="muted">Hover for details, click a dot to open the pitcher.</p>
+        <div id="z-count" class="muted"></div>
       </aside>
     </div>
   </section>

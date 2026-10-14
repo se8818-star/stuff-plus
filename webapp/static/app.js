@@ -162,7 +162,7 @@ function renderPitchers() {
 }
 
 // ------------------------------------------------------------- pitches tab
-const typeFilter = { t: new Set(), x: new Set() };
+const typeFilter = { t: new Set(), x: new Set(), z: new Set() };
 function renderTypeChips(id, set, cb) {
   const types = S.meta.pitch_types.filter(t => S.data.pitch_types.some(p => p.pitch_type === t));
   const box = $(`#${id}`); box.innerHTML = "";
@@ -264,6 +264,147 @@ function renderExplore() {
   });
   const r = corr(xs, ys);
   $("#x-corr").textContent = r == null ? "" : `${rows.length} pitches · r = ${r.toFixed(2)}`;
+}
+
+// ------------------------------------------------------------- 3D explore
+// A canvas scatter of HB x IVB x velocity in a fixed box (HB, IVB -25..25 in;
+// velocity 65..100 mph). Drag rotates, wheel/pinch zooms, Shift-drag or two
+// fingers pans; arrow keys, +/- and 0 do the same from the keyboard.
+const VELO_LIM = [65, 100];
+const V3 = { yaw: -0.65, pitch: 0.38, zoom: 1, panX: 0, panY: 0 };
+const V3_HOME = { ...V3 };
+const Z = { rows: [], proj: [], color: "stuff", raf: 0 };
+function render3D() {
+  Z.color = segValue("z-color");
+  const rows = filteredPitches("z", typeFilter.z).filter(r => r.hb != null && r.ivb != null && r.velo != null);
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  // normalised to the box's -1..1 on each axis: x = HB, y = IVB (up), z = velocity
+  Z.rows = rows.map(r => ({ r, x: clamp(r.hb, -INCH_LIM, INCH_LIM) / INCH_LIM, y: clamp(r.ivb, -INCH_LIM, INCH_LIM) / INCH_LIM,
+    z: (clamp(r.velo, ...VELO_LIM) - VELO_LIM[0]) / (VELO_LIM[1] - VELO_LIM[0]) * 2 - 1,
+    fill: Z.color === "type" ? ptColor(r.pitch_type) : stuffFill(r.stuff_plus) }));
+  $("#z-count").textContent = `${rows.length} pitches`;
+  const types = [...new Set(rows.map(r => r.pitch_type))];
+  $("#z-legend").innerHTML = Z.color === "type"
+    ? `<div class="type-key">${types.map(t => `<span><span class="dot" style="background:${ptColor(t)}"></span>${esc(ptName(t))}</span>`).join("")}</div>`
+    : `<p>Colour is Stuff+: red is better than average, blue is worse.</p><div class="scale"><span>70</span><div class="bar"></div><span>130</span></div>`;
+  $("#cube").setAttribute("aria-label", `3D scatter of ${rows.length} pitches: horizontal break, induced vertical break and velocity`);
+  draw3D();
+}
+function draw3D() {
+  cancelAnimationFrame(Z.raf);
+  Z.raf = requestAnimationFrame(() => {
+    const cv = $("#cube"), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    if (!W) return;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const cs = getComputedStyle(document.documentElement), col = k => cs.getPropertyValue(k).trim();
+    const cy = Math.cos(V3.yaw), sy = Math.sin(V3.yaw), cp = Math.cos(V3.pitch), sp = Math.sin(V3.pitch);
+    const scale = Math.min(W, H) * 0.25 * V3.zoom, D = 7, ox = W / 2 + V3.panX, oy = H / 2 + V3.panY;
+    const P = (x, y, z) => {  // rotate (yaw about the vertical, then pitch), then perspective
+      const x1 = x * cy - z * sy, z1 = x * sy + z * cy;
+      const y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;  // z2 > 0 is farther away
+      const f = D / (D + z2);
+      return [ox + x1 * scale * f, oy - y2 * scale * f, z2, f];
+    };
+    const line = (a, b, color, dash = []) => {
+      const p = P(...a), q = P(...b);
+      g.beginPath(); g.setLineDash(dash); g.strokeStyle = color; g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
+    };
+    const text = (s, at, align = "center") => { const p = P(...at); g.textAlign = align; g.fillText(s, p[0], p[1]); };
+    g.lineWidth = 1; g.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    // the box: 12 edges, plus light grid lines on the floor and back walls
+    const border = col("--border"), muted = col("--muted");
+    for (const t of [-0.8, -0.4, 0.4, 0.8]) {
+      line([t, -1, -1], [t, -1, 1], border); line([-1, -1, t], [1, -1, t], border);
+      line([t, -1, 1], [t, 1, 1], border); line([-1, t, 1], [1, t, 1], border);
+    }
+    for (const a of [-1, 1]) for (const b of [-1, 1]) {
+      line([-1, a, b], [1, a, b], muted); line([a, -1, b], [a, 1, b], muted); line([a, b, -1], [a, b, 1], muted);
+    }
+    // 0,0 reference: HB = 0 and IVB = 0 on the walls, and the line through both
+    line([0, -1, -1], [0, -1, 1], muted, [3, 3]); line([-1, 0, 1], [1, 0, 1], muted, [3, 3]);
+    line([0, 0, -1], [0, 0, 1], muted, [3, 3]);
+    g.setLineDash([]); g.fillStyle = muted;
+    for (const t of [-20, -10, 0, 10, 20]) {
+      text(String(t), [t / INCH_LIM, -1.08, -1.08]);
+      text(String(t), [-1.1, t / INCH_LIM, -1], "right");
+    }
+    for (const v of [70, 80, 90, 100]) text(String(v), [1.12, -1.08, (v - VELO_LIM[0]) / (VELO_LIM[1] - VELO_LIM[0]) * 2 - 1], "left");
+    g.fillStyle = col("--text"); g.font = "600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    text("HB, arm side (in)", [0, -1.25, -1.25]); text("IVB (in)", [-1.25, 1.12, -1]); text("Velo (mph)", [1.25, -1.25, 0], "left");
+    // points, far to near
+    Z.proj = Z.rows.map(d => { const [sx, sy2, depth, f] = P(d.x, d.y, d.z); return { d, sx, sy: sy2, depth, rad: 3.6 * f * Math.sqrt(V3.zoom) }; })
+      .sort((a, b) => b.depth - a.depth);
+    const surf = col("--surface");
+    for (const p of Z.proj) {
+      g.beginPath(); g.arc(p.sx, p.sy, Math.max(1.5, p.rad), 0, 2 * Math.PI);
+      g.fillStyle = p.d.fill; g.fill(); g.lineWidth = 0.6; g.strokeStyle = surf; g.stroke();
+    }
+    if (!Z.rows.length) { g.fillStyle = muted; g.textAlign = "center"; g.fillText("No pitches match these filters", W / 2, H / 2); }
+  });
+}
+function hit3D(e) {
+  const r = $("#cube").getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  let best = null, bd = 64;  // within 8px; the nearest-to-viewer dot wins ties
+  for (let i = Z.proj.length - 1; i >= 0; i--) {
+    const p = Z.proj[i], d = (p.sx - x) ** 2 + (p.sy - y) ** 2;
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+function wire3D() {
+  const cv = $("#cube"), tip = $("#tooltip"), ptrs = new Map();
+  let moved = 0, pinch = null;
+  const reset = () => { Object.assign(V3, V3_HOME); draw3D(); };
+  const zoomBy = k => { V3.zoom = Math.max(0.4, Math.min(8, V3.zoom * k)); draw3D(); };
+  cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; tip.hidden = true; });
+  cv.addEventListener("pointermove", e => {
+    if (!ptrs.has(e.pointerId)) {  // hover
+      const p = hit3D(e);
+      if (!p) { tip.hidden = true; cv.style.cursor = ""; return; }
+      const r = p.d.r; cv.style.cursor = "pointer";
+      tip.hidden = false; tip.style.left = e.clientX + 14 + "px"; tip.style.top = e.clientY + 10 + "px";
+      tip.innerHTML = `<b>${esc(r.name)}</b> · ${ptName(r.pitch_type)}<br>Stuff+ ${f1(r.stuff_plus)} · ${f1(r.velo)} mph · ${f1(r.ivb)} IVB · ${f1(r.hb)} HB<br><span class="muted">${f0(r.n)} pitches</span>`;
+      return;
+    }
+    const [px, py] = ptrs.get(e.pointerId), dx = e.clientX - px, dy = e.clientY - py;
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]); moved += Math.abs(dx) + Math.abs(dy);
+    if (ptrs.size === 2) {  // two fingers: pinch to zoom, move together to pan
+      const [a, b] = [...ptrs.values()], dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinch) V3.zoom = Math.max(0.4, Math.min(8, V3.zoom * dist / pinch));
+      pinch = dist; V3.panX += dx / 2; V3.panY += dy / 2;
+    } else if (e.shiftKey || e.buttons === 2) { V3.panX += dx; V3.panY += dy; }
+    else { V3.yaw += dx * 0.01; V3.pitch = Math.max(-1.5, Math.min(1.5, V3.pitch + dy * 0.01)); }
+    draw3D();
+  });
+  const up = e => {
+    ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null;
+    if (e.type === "pointerup" && moved < 4) { const p = hit3D(e); if (p) { tip.hidden = true; openPitcher(p.d.r.pitcher); } }
+  };
+  cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+  cv.addEventListener("pointerleave", () => { if (!ptrs.size) tip.hidden = true; });
+  cv.addEventListener("contextmenu", e => e.preventDefault());
+  cv.addEventListener("wheel", e => { e.preventDefault(); zoomBy(Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+  cv.addEventListener("dblclick", reset);
+  cv.addEventListener("keydown", e => {
+    const step = 0.08, pan = 20, k = e.key;
+    if (k === "ArrowLeft") e.shiftKey ? V3.panX -= pan : V3.yaw -= step;
+    else if (k === "ArrowRight") e.shiftKey ? V3.panX += pan : V3.yaw += step;
+    else if (k === "ArrowUp") e.shiftKey ? V3.panY -= pan : V3.pitch = Math.max(-1.5, V3.pitch - step);
+    else if (k === "ArrowDown") e.shiftKey ? V3.panY += pan : V3.pitch = Math.min(1.5, V3.pitch + step);
+    else if (k === "+" || k === "=") V3.zoom = Math.min(8, V3.zoom * 1.2);
+    else if (k === "-") V3.zoom = Math.max(0.4, V3.zoom / 1.2);
+    else if (k === "0") Object.assign(V3, V3_HOME);
+    else return;
+    e.preventDefault(); draw3D();
+  });
+  $("#z-zoom-in").onclick = () => zoomBy(1.25);
+  $("#z-zoom-out").onclick = () => zoomBy(0.8);
+  $("#z-reset").onclick = reset;
+  $("#z-min").oninput = render3D;
+  wireSeg("z-hand", render3D); wireSeg("z-color", render3D);
+  // redraw when the theme flips so box and labels pick up the new colours
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (S.tab === "explore3d") render3D(); });
 }
 
 // ------------------------------------------------------------- movement plot
@@ -613,7 +754,8 @@ function openCustom(id) {
 
 // ------------------------------------------------------------- routes, tabs & boot
 // #/pitchers  #/pitches  #/explore  #/grade  #/my-pitchers  #/pitchers/<slug>  (+ ?season=YYYY)
-const ROUTES = { pitchers: "pitchers", pitches: "pitches", explore: "explore", grader: "grade", custom: "my-pitchers" };
+const ROUTES = { pitchers: "pitchers", pitches: "pitches", explore: "explore", explore3d: "explore-3d", grader: "grade",
+  custom: "my-pitchers" };
 const TAB_OF = Object.fromEntries(Object.entries(ROUTES).map(([k, v]) => [v, k]));
 function slugify(name) {
   const n = String(name || "").includes(",") ? name.split(",").map(x => x.trim()).reverse().join(" ") : String(name || "");
@@ -674,6 +816,7 @@ function showTab(name) {
   });
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + name));
   if (name === "explore") renderExplore();
+  if (name === "explore3d") render3D();
   if (name === "custom") loadCustom();
   try { localStorage.setItem("stuffplus.tab", name); } catch (e) { /* ignore */ }
 }
@@ -712,8 +855,10 @@ async function loadSeason(season) {
   buildSlugs();
   renderTypeChips("t-types", typeFilter.t, renderPitches);
   renderTypeChips("x-types", typeFilter.x, renderExplore);
+  renderTypeChips("z-types", typeFilter.z, render3D);
   renderPitchers(); renderPitches();
   if ($("#tab-explore").classList.contains("active")) renderExplore();
+  if ($("#tab-explore3d").classList.contains("active")) render3D();
   if ($("#tab-custom").classList.contains("active")) loadCustom();
   gradeNow();
 }
@@ -738,7 +883,9 @@ async function boot() {
   $("#x-axis").innerHTML = opts; $("#y-axis").innerHTML = opts;
   $("#x-axis").value = "hb"; $("#y-axis").value = "ivb";
   $("#x-axis").onchange = $("#y-axis").onchange = renderExplore;
-  window.addEventListener("resize", () => { if ($("#tab-explore").classList.contains("active")) renderExplore(); });
+  window.addEventListener("resize", () => { if ($("#tab-explore").classList.contains("active")) renderExplore();
+    if ($("#tab-explore3d").classList.contains("active")) draw3D(); });
+  wire3D();
   $("#drawer-close").onclick = closeDrawer;
   $("#drawer").onclick = e => { if (e.target.id === "drawer") closeDrawer(); };
   document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#drawer").hidden) closeDrawer(); });
