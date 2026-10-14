@@ -108,6 +108,12 @@ table.inputs select { padding: 4px 6px; }
   border-radius: 8px; margin-top: 4px; max-height: 280px; overflow: auto; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
 .dropdown div { padding: 6px 10px; cursor: pointer; } .dropdown div:hover { background: var(--row-hover); }
 #scatter svg { display: block; margin: 0 auto; }
+#cube { display: block; width: min(100%, max(300px, calc(100vh - 250px))); aspect-ratio: 1 / 1; margin: 0 auto;
+  cursor: grab; touch-action: none; border-radius: 8px; }
+#cube:active { cursor: grabbing; }
+.cube-tools { margin: 8px 0 0; }
+.cube-tools button { min-width: 36px; }
+.type-key { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; font-size: 12.5px; }
 .explore { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 16px; align-items: start; }
 .legend-card p { margin: 0 0 10px; }
 .scale { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 12px; }
