@@ -107,6 +107,7 @@ table.inputs select { padding: 4px 6px; }
 .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; margin-top: 4px; max-height: 280px; overflow: auto; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
 .dropdown div { padding: 6px 10px; cursor: pointer; } .dropdown div:hover { background: var(--row-hover); }
+#scatter svg { display: block; margin: 0 auto; }
 .explore { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 16px; align-items: start; }
 .legend-card p { margin: 0 0 10px; }
 .scale { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 12px; }

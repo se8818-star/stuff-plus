@@ -211,6 +211,7 @@ function renderPitches() {
 const AXES = { velo: "Velocity (mph)", spin: "Spin (rpm)", ivb: "IVB (in)", hb: "HB, arm side (in)",
   ext: "Extension (ft)", rel_height: "Release height (ft)", rel_side: "Release side (ft)",
   usage: "Usage (%)", stuff_plus: "Stuff+" };
+const INCH_AXES = new Set(["ivb", "hb"]), INCH_LIM = 25;
 function niceTicks(lo, hi, n = 6) {
   const span = hi - lo || 1, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));
   const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= step0);
@@ -227,12 +228,17 @@ function corr(xs, ys) {
 function renderExplore() {
   const xk = $("#x-axis").value, yk = $("#y-axis").value;
   const rows = filteredPitches("x", typeFilter.x).filter(r => r[xk] != null && r[yk] != null);
-  const box = $("#scatter"), W = Math.max(box.clientWidth - 28, 320), H = Math.min(560, Math.max(360, W * 0.62));
-  const m = { l: 52, r: 14, t: 12, b: 42 };
+  // square plot area; axes in inches use the same fixed -25..25 as the movement plot
+  const box = $("#scatter"), m = { l: 52, r: 14, t: 12, b: 42 };
+  const side = Math.min(Math.max(box.clientWidth - 28 - m.l - m.r, 220), 560);
+  const W = side + m.l + m.r, H = side + m.t + m.b;
   const xs = rows.map(r => r[xk]), ys = rows.map(r => r[yk]);
   const pad = (a, b) => { const d = (b - a) * 0.05 || 1; return [a - d, b + d]; };
-  const [x0, x1] = pad(Math.min(...xs), Math.max(...xs)), [y0, y1] = pad(Math.min(...ys), Math.max(...ys));
-  const sx = v => m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r), sy = v => H - m.b - (v - y0) / (y1 - y0) * (H - m.t - m.b);
+  const range = (k, vs) => INCH_AXES.has(k) ? [-INCH_LIM, INCH_LIM] : pad(Math.min(...vs), Math.max(...vs));
+  const [x0, x1] = range(xk, xs), [y0, y1] = range(yk, ys);
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const sx = v => m.l + (clamp(v, x0, x1) - x0) / (x1 - x0) * (W - m.l - m.r),
+    sy = v => H - m.b - (clamp(v, y0, y1) - y0) / (y1 - y0) * (H - m.t - m.b);
   let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
   if (rows.length) {
     for (const t of niceTicks(x0, x1)) svg += `<line class="axis" x1="${sx(t)}" x2="${sx(t)}" y1="${m.t}" y2="${H - m.b}"/><text x="${sx(t)}" y="${H - m.b + 16}" text-anchor="middle">${t}</text>`;
@@ -262,7 +268,7 @@ function renderExplore() {
 
 // ------------------------------------------------------------- movement plot
 function movementSVG(pitches, size = 300) {
-  const lim = 25, m = 28, w = size, s = v => m + (v + lim) / (2 * lim) * (w - 2 * m);
+  const lim = INCH_LIM, m = 28, w = size, s = v => m + (v + lim) / (2 * lim) * (w - 2 * m);
   let g = `<svg width="${w}" height="${w}" viewBox="0 0 ${w} ${w}" role="img" aria-label="Pitch movement plot">`;
   for (const t of [-20, -10, 0, 10, 20]) {
     g += `<line class="${t ? "axis" : "zero"}" x1="${s(t)}" x2="${s(t)}" y1="${m}" y2="${w - m}"/>`;
