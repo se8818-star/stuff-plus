@@ -374,7 +374,7 @@ function wire3D() {
       if (pinch) V3.zoom = Math.max(0.4, Math.min(8, V3.zoom * dist / pinch));
       pinch = dist; V3.panX += dx / 2; V3.panY += dy / 2;
     } else if (e.shiftKey || e.buttons === 2) { V3.panX += dx; V3.panY += dy; }
-    else { V3.yaw += dx * 0.01; V3.pitch = Math.max(-1.5, Math.min(1.5, V3.pitch + dy * 0.01)); }
+    else { V3.yaw += dx * 0.01; V3.pitch = Math.max(-1.5, Math.min(1.5, V3.pitch - dy * 0.01)); }  // drag down tilts the box down
     draw3D();
   });
   const up = e => {
@@ -390,8 +390,8 @@ function wire3D() {
     const step = 0.08, pan = 20, k = e.key;
     if (k === "ArrowLeft") e.shiftKey ? V3.panX -= pan : V3.yaw -= step;
     else if (k === "ArrowRight") e.shiftKey ? V3.panX += pan : V3.yaw += step;
-    else if (k === "ArrowUp") e.shiftKey ? V3.panY -= pan : V3.pitch = Math.max(-1.5, V3.pitch - step);
-    else if (k === "ArrowDown") e.shiftKey ? V3.panY += pan : V3.pitch = Math.min(1.5, V3.pitch + step);
+    else if (k === "ArrowUp") e.shiftKey ? V3.panY -= pan : V3.pitch = Math.min(1.5, V3.pitch + step);
+    else if (k === "ArrowDown") e.shiftKey ? V3.panY += pan : V3.pitch = Math.max(-1.5, V3.pitch - step);
     else if (k === "+" || k === "=") V3.zoom = Math.min(8, V3.zoom * 1.2);
     else if (k === "-") V3.zoom = Math.max(0.4, V3.zoom / 1.2);
     else if (k === "0") Object.assign(V3, V3_HOME);
