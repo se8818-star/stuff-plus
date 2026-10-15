@@ -27,7 +27,7 @@ nav { display: flex; gap: 4px; }
 nav button { background: none; border: 0; padding: 8px 12px; border-radius: 8px; color: var(--muted);
   font: inherit; font-weight: 600; cursor: pointer; }
 nav button.active { background: var(--surface-2); color: var(--text); }
-.season { margin-left: auto; color: var(--muted); }
+.pickers { margin-left: auto; display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); }
 .muted { color: var(--muted); } .small { font-size: 12px; }
 .banner { background: #fff4d6; color: #6b4e00; padding: 8px 24px; border-bottom: 1px solid #f0dc9c; }
 @media (prefers-color-scheme: dark) { .banner { background: #2e2610; color: #f0d58a; border-color: #4a3d14; } }
@@ -134,7 +134,7 @@ svg .ptlabel { fill: var(--text); font-weight: 700; font-size: 11px; }
 @media (max-width: 900px) {
   header, main { padding-left: 16px; padding-right: 16px; }
   .grader, .explore, .drawer .row { grid-template-columns: 1fr; }
-  .season { margin-left: 0; }
+  .pickers { margin-left: 0; }
   footer { padding-left: 16px; padding-right: 16px; }
 }
 /* phones: Hand, Role and Pitches fold into a subline under the name */

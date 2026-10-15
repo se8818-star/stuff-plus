@@ -81,16 +81,47 @@ def infer_roles(df):
     return pd.DataFrame({"games": games, "gs": gs, "role": role})
 
 
+# Frozen model families the site can switch between, in menu order (the first
+# one found is the default), with the name shown in the model menu.
+MODEL_NAMES = {
+    "stuffplus_no_remembering": "Stuff+ (no remembering)",
+    "stuffplus": "Stuff+ (remembering)",
+    "stuffplus_s6": "S6 (approach angles)",
+}
+
+
+def model_family(stem):
+    """'stuffplus_s6_v1.0.0' -> 'stuffplus_s6'."""
+    return str(stem).rsplit("_v", 1)[0]
+
+
+def model_name(stem):
+    return MODEL_NAMES.get(model_family(stem), str(stem))
+
+
+def _version(meta_path):
+    return tuple(int(x) if x.isdigit() else x for x in meta_path.stem.rsplit("_v", 1)[1].split("."))
+
+
+def site_models():
+    """Metadata of every frozen model the site can show: the newest version of
+    each family in MODEL_NAMES whose .joblib exists, in menu order."""
+    out = []
+    for fam in MODEL_NAMES:
+        metas = [m for m in MODELS.glob(f"{fam}_v*.json")
+                 if model_family(m.stem) == fam and (MODELS / f"{m.stem}.joblib").exists()]
+        if metas:
+            out.append(max(metas, key=_version))
+    return out
+
+
 def frozen_meta():
-    """The shipped model's metadata, if any. Since v1.1.0 the website shows
+    """The default model's metadata, if any. Since v1.1.0 the website opens on
     Stuff+ (no remembering), models/stuffplus_no_remembering_v<version>.json,
     whose bundle already holds final.py's fold models. Before that it was
     models/stuffplus_v<version>.json plus webapp.folds."""
-    for pattern in ("stuffplus_no_remembering_v*.json", "stuffplus_v*.json"):
-        metas = [m for m in sorted(MODELS.glob(pattern)) if (MODELS / f"{m.stem}.joblib").exists()]
-        if metas:
-            return metas[-1]
-    return None
+    metas = site_models()
+    return metas[0] if metas else None
 
 
 def roles_by_season(df):
@@ -170,7 +201,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         fp = folds_path(frozen)
         art = joblib.load(Path(frozen).with_suffix(".joblib"))
         own_folds = isinstance(art, dict) and "fold_models" in art      # final.py >= 1.1.0
-        suffix = "_no_remembering" if own_folds else ""
+        # published leaderboards: pitchers_<season><suffix>.csv, e.g. _no_remembering, _s6
+        suffix = model_family(Path(frozen).stem)[len("stuffplus"):]
         oof = own_folds or fp.exists()
         label = (f"{meta.get('name', 'stuffplus')} v{meta['version']} (frozen model "
                  f"{meta.get('model', meta.get('feature_set'))}{', out-of-fold' if oof else ''})")
@@ -182,7 +214,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
             models, pitcher_fold = fb["models"], fb["pitcher_fold"]
             print(f"using {label}: {fp.name}; check against the published leaderboard: {fb['check']}")
         else:
-            model = AveragedModel(art, feats)
+            model = AveragedModel(art["models"] if isinstance(art, dict) else art, feats)
             print(f"using {label}: {Path(frozen).name}. No {fp.name}, so the grader and the seasons "
                   "before the published one use this full model (in-sample); "
                   "for a v1.0.0 model, run `python -m webapp.folds` to score them out-of-fold "
@@ -335,8 +367,9 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     notes = {}
     for y in scale:
         if y in official:
-            notes[y] = ("Published leaderboard: out-of-fold scores, shrunk (" + official[y] + "); rows below "
-                        "the published minimum pitches use the site's own out-of-fold, shrunk scores")
+            kind = "out-of-fold, shrunk" if folds else "shrunk"
+            notes[y] = (f"Published leaderboard: {kind} scores ({official[y]}); rows below "
+                        f"the published minimum pitches use the site's own {kind} scores")
         elif folds:
             notes[y] = ("Out-of-fold: each pitcher is scored by a model that never saw his pitches"
                         + (", scores shrunk" if meta else ""))
@@ -353,6 +386,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         lgb = None
     bundle = {
         "variant": meta["name"] + " v" + meta["version"] if meta else variant, "label": label,
+        "model_name": model_name(Path(frozen).stem) if meta else variant,
         "frozen": bool(meta), "features": feats, "model": model,
         "folds": folds, "pitcher_fold": pitcher_fold,
         "train_years": list(train), "seasons": [int(s) for s in scale], "season_notes": notes,

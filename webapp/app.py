@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from webapp.build import model_name
 from webapp.grading import grade_arsenal
 
 STATIC = Path(__file__).parent / "static"
@@ -72,15 +73,40 @@ class CustomPitcher(BaseModel):
     based_on: Optional[BasedOn] = None
 
 
-def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
-    bundle = joblib.load(bundle_path)
-    pitchers, pitch_types = bundle["pitchers"], bundle["pitch_types"]
+def model_id(bundle_path) -> str:
+    """'models/stuffplus_site_stuffplus_s6_v1.0.0.joblib' -> 'stuffplus_s6_v1.0.0'."""
+    return Path(bundle_path).stem.removeprefix("stuffplus_site_")
+
+
+def create_app(bundle_paths, custom_path: Path = CUSTOM) -> FastAPI:
+    """`bundle_paths`: one bundle, or several the site can switch between
+    (the first is the default). Every /api endpoint takes ?model=<id>."""
+    if isinstance(bundle_paths, (str, Path)):
+        bundle_paths = [bundle_paths]
+    bundles = {model_id(p): joblib.load(p) for p in bundle_paths}
+    default = next(iter(bundles))
     app = FastAPI(title="Stuff+ leaderboards")
 
+    def pick(model: Optional[str]):
+        if model is None:
+            return bundles[default]
+        if model not in bundles:
+            raise HTTPException(404, f"unknown model {model}")
+        return bundles[model]
+
+    @app.get("/api/models")
+    def models():
+        return [{"id": k, "name": b.get("model_name") or model_name(k),
+                 "label": b.get("label", b["variant"]), "default": k == default}
+                for k, b in bundles.items()]
+
     @app.get("/api/meta")
-    def meta():
+    def meta(model: Optional[str] = None):
+        bundle = pick(model)
+        pitchers, pitch_types = bundle["pitchers"], bundle["pitch_types"]
         counts = pitch_types.groupby("pitch_type")["n"].sum().sort_values(ascending=False)
         return {
+            "model": model or default, "model_name": bundle.get("model_name") or model_name(model or default),
             "variant": bundle["variant"], "features": bundle["features"],
             "label": bundle.get("label", bundle["variant"]), "spread": bundle.get("spread"), "frozen": bundle.get("frozen", False),
             "season_notes": {str(k): v for k, v in bundle.get("season_notes", {}).items()},
@@ -94,14 +120,18 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
         }
 
     @app.get("/api/leaderboard/{season}")
-    def leaderboard(season: int):
+    def leaderboard(season: int, model: Optional[str] = None):
+        bundle = pick(model)
+        pitchers, pitch_types = bundle["pitchers"], bundle["pitch_types"]
         if season not in bundle["seasons"]:
             raise HTTPException(404, f"no season {season}")
         return {"pitchers": _records(pitchers[pitchers["year"] == season]),
                 "pitch_types": _records(pitch_types[pitch_types["year"] == season])}
 
     @app.get("/api/pitcher/{pitcher_id}")
-    def pitcher(pitcher_id: int):
+    def pitcher(pitcher_id: int, model: Optional[str] = None):
+        bundle = pick(model)
+        pitchers, pitch_types = bundle["pitchers"], bundle["pitch_types"]
         p = pitchers[pitchers["pitcher"] == pitcher_id]
         if p.empty:
             raise HTTPException(404, "unknown pitcher")
@@ -110,7 +140,8 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
                                         .sort_values(["year", "n"], ascending=[True, False]))}
 
     @app.post("/api/grade")
-    def grade(req: GradeRequest):
+    def grade(req: GradeRequest, model: Optional[str] = None):
+        bundle = pick(model)
         if req.season is not None and req.season not in bundle["seasons"]:
             raise HTTPException(404, f"no season {req.season}")
         return grade_arsenal(bundle, req.hand, [p.model_dump() for p in req.pitches], req.season, req.pitcher)
@@ -139,28 +170,31 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
             Path(tmp).unlink(missing_ok=True)
             raise
 
-    def graded(row, season):
+    def graded(row, season, bundle):
         src = (row.get("based_on") or {}).get("pitcher")
         return {**row, "result": grade_arsenal(bundle, row["hand"], row["pitches"], season, src)}
 
     @app.get("/api/custom")
-    def list_custom(season: Optional[int] = None):
+    def list_custom(season: Optional[int] = None, model: Optional[str] = None):
+        bundle = pick(model)
         if season is not None and season not in bundle["seasons"]:
             raise HTTPException(404, f"no season {season}")
         with custom_lock:
             rows = read_custom()
-        return [graded(r, season) for r in rows]
+        return [graded(r, season, bundle) for r in rows]
 
     @app.post("/api/custom")
-    def create_custom(p: CustomPitcher):
+    def create_custom(p: CustomPitcher, model: Optional[str] = None):
+        bundle = pick(model)
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         row = {"id": uuid.uuid4().hex[:12], **p.model_dump(), "created": now, "updated": now}
         with custom_lock:
             write_custom(read_custom() + [row])
-        return graded(row, None)
+        return graded(row, None, bundle)
 
     @app.put("/api/custom/{cid}")
-    def update_custom(cid: str, p: CustomPitcher):
+    def update_custom(cid: str, p: CustomPitcher, model: Optional[str] = None):
+        bundle = pick(model)
         with custom_lock:
             rows = read_custom()
             i = next((i for i, r in enumerate(rows) if r["id"] == cid), None)
@@ -169,7 +203,7 @@ def create_app(bundle_path: Path, custom_path: Path = CUSTOM) -> FastAPI:
             rows[i] = {**rows[i], **p.model_dump(),
                        "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}
             write_custom(rows)
-        return graded(rows[i], None)
+        return graded(rows[i], None, bundle)
 
     @app.delete("/api/custom/{cid}")
     def delete_custom(cid: str):

@@ -76,7 +76,14 @@ new model.
   `data/` is scored the same way (each pitcher by a fold model that never saw him, same
   shrinkage); the grader uses those fold models too. They come straight from
   `models/stuffplus_no_remembering_v1.1.0.joblib`, so `python -m webapp.folds` is only
-  needed for a v1.0.0 model. The remembering Stuff+ model is not shown on the site.
+  needed for a v1.0.0 model.
+  The **Model** menu in the header switches the leaderboards, the grader and My pitchers
+  between every frozen model in `models/` (the newest version of each):
+  Stuff+ (no remembering), the default; Stuff+ (remembering), `models/stuffplus_v1.1.0`,
+  whose 2026 board is its published `leaderboards/*_2026.csv` and whose other seasons are
+  in-sample; and S6, `models/stuffplus_s6_v1.0.0`, with `leaderboards/*_2026_s6.csv`.
+  Each gets its own cached bundle, built on first run (a few minutes each). The choice is
+  remembered in the browser; the API takes `?model=<id>`, and `/api/models` lists them.
 - **With `data/` only**, or with `--variant B_plus_center` / `--train 2022 2023 2024`,
   it trains that feature-set variant instead.
 - **Without `data/`** it serves a synthetic demo, with a banner saying so.

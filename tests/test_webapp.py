@@ -1,4 +1,6 @@
 """Website: model bundle, grader physics, and API, on a small synthetic bundle."""
+import json
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -519,3 +521,54 @@ def test_concurrent_saves_do_not_lose_each_other(bundle_file, tmp_path, monkeypa
         c.post("/api/custom", json={"name": "lost", "hand": "R", "pitches": arsenal})
     assert len(app_module.json.loads(store.read_text())) == 12
     assert [p.name for p in tmp_path.iterdir()] == ["custom.json"]
+
+
+def test_site_models_pick_newest_of_each_family(v110_paths):
+    """The model menu offers each frozen family once (newest version), no-remembering first."""
+    from webapp import build as wb
+    site = v110_paths
+    old = site["models"] / "stuffplus_v1.0.0"
+    old.with_suffix(".json").write_text(json.dumps({"name": "stuffplus", "version": "1.0.0"}))
+    joblib.dump([], old.with_suffix(".joblib"))
+    (site["models"] / "stuffplus_s6_v1.0.0.json").write_text("{}")    # no .joblib: not offered
+    assert wb.site_models() == [site["meta"], site["models"] / "stuffplus_v1.1.0.json"]
+    assert wb.model_name("stuffplus_v1.1.0") == "Stuff+ (remembering)"
+    assert wb.model_name("stuffplus_s6_v1.0.0") == "S6 (approach angles)"
+
+
+def test_model_menu_switches_leaderboards_and_my_pitchers(v110_paths, tmp_path):
+    """Two bundles behind one app: ?model= picks the leaderboard, the grader and
+    the grades of saved custom pitchers; no model means the first (default)."""
+    from fastapi.testclient import TestClient
+    from webapp import build as wb
+    from webapp.app import create_app, model_id
+    site = v110_paths
+    nr_meta, rem_meta = wb.site_models()
+    paths = [wb.build(synthetic=True, frozen=m, synth_size=site["size"],
+                      out=site["models"] / f"stuffplus_site_{m.stem}.joblib") for m in (nr_meta, rem_meta)]
+    rem = joblib.load(paths[1])
+    assert rem["model_name"] == "Stuff+ (remembering)" and not rem["folds"]
+    assert all(n.startswith("In-sample") for n in rem["season_notes"].values())
+
+    nr_id, rem_id = model_id(paths[0]), model_id(paths[1])
+    assert (nr_id, rem_id) == (nr_meta.stem, "stuffplus_v1.1.0")
+    c = TestClient(create_app(paths, custom_path=tmp_path / "custom.json"))
+    ms = c.get("/api/models").json()
+    assert [(m["id"], m["name"], m["default"]) for m in ms] == [
+        (nr_id, "Stuff+ (no remembering)", True), (rem_id, "Stuff+ (remembering)", False)]
+    assert c.get("/api/meta").json()["model"] == nr_id
+    assert c.get(f"/api/meta?model={rem_id}").json()["model_name"] == "Stuff+ (remembering)"
+    assert c.get("/api/meta?model=nope").status_code == 404
+
+    board = lambda q: {r["pitcher"]: r["stuff_plus"]  # noqa: E731
+                       for r in c.get(f"/api/leaderboard/2026{q}").json()["pitchers"]}
+    default, nr, remb = board(""), board(f"?model={nr_id}"), board(f"?model={rem_id}")
+    assert default == nr and nr.keys() == remb.keys() and nr != remb
+
+    arsenal = {"name": "Test arm", "hand": "R", "pitches": [
+        {"pitch_type": "FF", "usage": 60, "velo": 96, "spin": 2400, "ivb": 17, "hb": 8},
+        {"pitch_type": "SL", "usage": 40, "velo": 86, "spin": 2600, "ivb": 1, "hb": -5}]}
+    assert c.post("/api/custom", json=arsenal).status_code == 200
+    graded = {m["id"]: c.get(f"/api/custom?season=2026&model={m['id']}").json()[0]["result"]["overall"]["stuff_plus"]
+              for m in ms}
+    assert graded[nr_id] != graded[rem_id]

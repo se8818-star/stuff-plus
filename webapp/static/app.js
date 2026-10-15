@@ -39,8 +39,11 @@ const f0 = v => v == null ? "–" : Math.round(v).toLocaleString();
 const pct = v => { if (v == null) return "–"; const n = Math.min(99, Math.max(1, Math.round(v))); return `${n}${ordinal(n)}`; };
 function ordinal(n) { const s = ["th", "st", "nd", "rd"], v = n % 100; return s[(v - 20) % 10] || s[v] || s[0]; }
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// every /api call goes to the model picked in the header menu
+const withModel = url => !S.model || !url.startsWith("/api/") || url.startsWith("/api/models") ? url
+  : `${url}${url.includes("?") ? "&" : "?"}model=${encodeURIComponent(S.model)}`;
 const api = async (url, opts) => {
-  const r = await fetch(url, opts);
+  const r = await fetch(withModel(url), opts);
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return r.json();
 };
@@ -64,7 +67,7 @@ const stuffCell = v => v == null ? '<span class="muted">–</span>'
   : `<span class="stuff" style="background:${stuffBg(v)}">${Math.round(v)}</span>`;
 
 // ------------------------------------------------------------- state
-const S = { meta: null, season: null, data: null, byPitcher: {}, sort: {} };
+const S = { meta: null, season: null, data: null, byPitcher: {}, sort: {}, models: [], model: null };
 
 // ------------------------------------------------------------- generic table
 // cols are in CSV order; `front` lists keys shown first on screen (the CSV keeps its order)
@@ -842,7 +845,7 @@ function renderMethodology() {
     <p>Stuff+ grades each pitch from its physical traits (velocity, spin, movement, release and extension), not
       from results, then averages a pitcher's pitches. 100 is league average${m.spread ? " and 10 points is one standard deviation" : ". Each pitch is scored with 10 points as one standard deviation, so pitcher averages are closer together, about 5 points per standard deviation"}.
       Grades put the same number on the 20–80 scouting scale.${m.frozen ? " Scores are shrunk toward average for pitchers with few pitches." : ""}</p>
-    <p>Model: ${esc(m.label)}${m.synthetic ? " · synthetic demo data" : ""}. Built ${esc(m.built_at)}.</p>
+    <p>Model: ${esc(m.model_name)} (${esc(m.label)})${m.synthetic ? " · synthetic demo data" : ""}. Built ${esc(m.built_at)}.</p>
     <p>Features: ${esc(m.features.join(", "))}.</p>
     ${notes ? `<ul>${notes}</ul>` : ""}`;
 }
@@ -862,14 +865,40 @@ async function loadSeason(season) {
   if ($("#tab-custom").classList.contains("active")) loadCustom();
   gradeNow();
 }
+function renderSeasons() {
+  $("#season").innerHTML = [...S.meta.seasons].reverse().map(s => `<option>${s}</option>`).join("");
+  if (S.season != null) $("#season").value = S.season;
+}
+function renderModelPicker() {
+  $("#model-picker").hidden = S.models.length < 2;
+  $("#model").innerHTML = S.models.map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
+  $("#model").value = S.model;
+  $("#model").onchange = e => switchModel(e.target.value);
+}
+// another model: new leaderboards, grades for the grader and My pitchers, same tab and season
+async function switchModel(id) {
+  S.model = id;
+  try { localStorage.setItem("stuffplus.model", id); } catch (e) { /* ignore */ }
+  S.meta = await api("/api/meta");
+  renderMethodology();
+  $("#p-role").hidden = !S.meta.has_roles;
+  const season = S.meta.seasons.includes(S.season) ? S.season : S.meta.latest_season;
+  S.season = null; renderSeasons(); $("#season").value = season;
+  await loadSeason(season);
+  if (!$("#drawer").hidden && D.id != null) await showPitcher(D.id);
+}
 async function boot() {
+  S.models = await api("/api/models");
+  let saved = null; try { saved = localStorage.getItem("stuffplus.model"); } catch (e) { /* ignore */ }
+  S.model = (S.models.find(m => m.id === saved) || S.models.find(m => m.default) || S.models[0])?.id ?? null;
+  renderModelPicker();
   S.meta = await api("/api/meta");
   const m = S.meta, tr = m.train_years;
   renderMethodology();
   $("#demo-banner").hidden = !m.synthetic;
   if (m.has_roles) $("#p-role").hidden = false;
   if (m.synthetic) { $("#p-min").value = 100; }
-  $("#season").innerHTML = [...m.seasons].reverse().map(s => `<option>${s}</option>`).join("");
+  renderSeasons();
   $("#season").onchange = e => go({ tab: S.tab, season: +e.target.value });
   wireTabs();
   ["p-search", "p-min"].forEach(id => $("#" + id).oninput = renderPitchers);
