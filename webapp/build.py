@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from features import VARIANTS, load  # noqa: E402
+from physics import actual_angles  # noqa: E402
 from run_ablation import make_model  # noqa: E402
 from webapp.folds import fit_folds, folds_path, oof_predict  # noqa: E402
 from webapp.grading import AveragedModel, accel_to_movement, rescale  # noqa: E402
@@ -81,16 +82,47 @@ def infer_roles(df):
     return pd.DataFrame({"games": games, "gs": gs, "role": role})
 
 
+# Frozen model families the site can switch between, in menu order (the first
+# one found is the default), with the name shown in the model menu.
+MODEL_NAMES = {
+    "stuffplus_no_remembering": "Stuff+ (no remembering)",
+    "stuffplus": "Stuff+ (remembering)",
+    "stuffplus_s6": "S6 (approach angles)",
+}
+
+
+def model_family(stem):
+    """'stuffplus_s6_v1.0.0' -> 'stuffplus_s6'."""
+    return str(stem).rsplit("_v", 1)[0]
+
+
+def model_name(stem):
+    return MODEL_NAMES.get(model_family(stem), str(stem))
+
+
+def _version(meta_path):
+    return tuple(int(x) if x.isdigit() else x for x in meta_path.stem.rsplit("_v", 1)[1].split("."))
+
+
+def site_models():
+    """Metadata of every frozen model the site can show: the newest version of
+    each family in MODEL_NAMES whose .joblib exists, in menu order."""
+    out = []
+    for fam in MODEL_NAMES:
+        metas = [m for m in MODELS.glob(f"{fam}_v*.json")
+                 if model_family(m.stem) == fam and (MODELS / f"{m.stem}.joblib").exists()]
+        if metas:
+            out.append(max(metas, key=_version))
+    return out
+
+
 def frozen_meta():
-    """The shipped model's metadata, if any. Since v1.1.0 the website shows
+    """The default model's metadata, if any. Since v1.1.0 the website opens on
     Stuff+ (no remembering), models/stuffplus_no_remembering_v<version>.json,
     whose bundle already holds final.py's fold models. Before that it was
     models/stuffplus_v<version>.json plus webapp.folds."""
-    for pattern in ("stuffplus_no_remembering_v*.json", "stuffplus_v*.json"):
-        metas = [m for m in sorted(MODELS.glob(pattern)) if (MODELS / f"{m.stem}.joblib").exists()]
-        if metas:
-            return metas[-1]
-    return None
+    metas = site_models()
+    return metas[0] if metas else None
 
 
 def roles_by_season(df):
@@ -141,7 +173,7 @@ def to_grades(x, mean, sd):
 
 
 def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
-          synth_size=(220, 500), frozen=None, spread="keep"):
+          synth_size=(220, 500), frozen=None, spread=None):
     """Train `variant` (or load the frozen model whose metadata JSON is
     `frozen`), score every season and save the website bundle. `spread`
     ("keep", "center" or None) rescales displayed Stuff+ so each pitch type,
@@ -170,7 +202,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         fp = folds_path(frozen)
         art = joblib.load(Path(frozen).with_suffix(".joblib"))
         own_folds = isinstance(art, dict) and "fold_models" in art      # final.py >= 1.1.0
-        suffix = "_no_remembering" if own_folds else ""
+        # published leaderboards: pitchers_<season><suffix>.csv, e.g. _no_remembering, _s6
+        suffix = model_family(Path(frozen).stem)[len("stuffplus"):]
         oof = own_folds or fp.exists()
         label = (f"{meta.get('name', 'stuffplus')} v{meta['version']} (frozen model "
                  f"{meta.get('model', meta.get('feature_set'))}{', out-of-fold' if oof else ''})")
@@ -182,7 +215,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
             models, pitcher_fold = fb["models"], fb["pitcher_fold"]
             print(f"using {label}: {fp.name}; check against the published leaderboard: {fb['check']}")
         else:
-            model = AveragedModel(art, feats)
+            model = AveragedModel(art["models"] if isinstance(art, dict) else art, feats)
             print(f"using {label}: {Path(frozen).name}. No {fp.name}, so the grader and the seasons "
                   "before the published one use this full model (in-sample); "
                   "for a v1.0.0 model, run `python -m webapp.folds` to score them out-of-fold "
@@ -233,6 +266,15 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
               f"HB {(sc['hb'] - hb_sc).abs().median():.2f}")
     # features.py mirrors LHP spin axis; show and pre-fill the raw Savant value
     sc["spin_axis_raw"] = np.where(sc["p_throws"] == "L", (360 - sc["spin_axis"]) % 360, sc["spin_axis"])
+    # approach angles where the pitch actually crosses the plate, as Savant shows
+    # them (degrees; VAA closer to 0 = flatter); HAA mirrored so + = toward arm side
+    sc["vaa"] = sc["haa"] = np.nan
+    if {"vx0", "vy0", "vz0", "ay"} <= set(sc.columns):
+        lhp = (sc["p_throws"] == "L").to_numpy()
+        vaa, haa = actual_angles(sc["vx0"].to_numpy(), sc["vy0"].to_numpy(), sc["vz0"].to_numpy(),
+                                 np.where(lhp, -sc["ax"], sc["ax"]),  # features.py mirrored ax for LHP
+                                 sc["ay"].to_numpy(), sc["az"].to_numpy())
+        sc["vaa"], sc["haa"] = vaa, np.where(lhp, haa, -haa)
 
     arm_coef = None
     a = sc[["arm_angle", "z0", "x0"]].dropna()
@@ -246,7 +288,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
                  velo=("start_speed", "mean"), spin=("spin_rate", "mean"),
                  ext=("extension", "mean"), rel_side=("x0", "mean"),
                  rel_height=("z0", "mean"), ivb=("ivb", "mean"), hb=("hb", "mean"),
-                 spin_axis=("spin_axis_raw", "mean"), arm_angle=("arm_angle", "mean"))
+                 spin_axis=("spin_axis_raw", "mean"), arm_angle=("arm_angle", "mean"),
+                 vaa=("vaa", "mean"), haa=("haa", "mean"))
             .reset_index())
     tot = sc.groupby(keys).agg(n=("stuff", "size"), stuff_plus=("stuff", "mean"),
                                hand=("p_throws", lambda s: s.mode().iat[0]),
@@ -322,9 +365,10 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         keep = rows["year"].isin(official) & rows["grade"].notna() if "grade" in rows else False
         rows["grade"] = np.where(keep, rows.get("grade", g), g)
 
+    for rows in (tot, pt):
+        rows["stuff_plus_model"] = rows["stuff_plus"]
     if spread:
         for rows, which in ((tot, "pitcher"), (pt, "pitch_type")):
-            rows["stuff_plus_model"] = rows["stuff_plus"]
             rows["stuff_plus"] = [
                 rescale(x, grades[y]["pitcher"] if which == "pitcher" else
                         grades[y]["pitch_type"].get(t, grades[y]["all_pitches"]), spread)
@@ -334,8 +378,9 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     notes = {}
     for y in scale:
         if y in official:
-            notes[y] = ("Published leaderboard: out-of-fold scores, shrunk (" + official[y] + "); rows below "
-                        "the published minimum pitches use the site's own out-of-fold, shrunk scores")
+            kind = "out-of-fold, shrunk" if folds else "shrunk"
+            notes[y] = (f"Published leaderboard: {kind} scores ({official[y]}); rows below "
+                        f"the published minimum pitches use the site's own {kind} scores")
         elif folds:
             notes[y] = ("Out-of-fold: each pitcher is scored by a model that never saw his pitches"
                         + (", scores shrunk" if meta else ""))
@@ -352,6 +397,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         lgb = None
     bundle = {
         "variant": meta["name"] + " v" + meta["version"] if meta else variant, "label": label,
+        "model_name": model_name(Path(frozen).stem) if meta else variant,
         "frozen": bool(meta), "features": feats, "model": model,
         "folds": folds, "pitcher_fold": pitcher_fold,
         "train_years": list(train), "seasons": [int(s) for s in scale], "season_notes": notes,
@@ -376,7 +422,7 @@ def main():
     ap.add_argument("--train", nargs="*", type=int, help="training seasons (default: all)")
     ap.add_argument("--synthetic", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--spread", default="keep", choices=["keep", "center", "none"],
+    ap.add_argument("--spread", default="none", choices=["keep", "center", "none"],
                     help="SD-10 display scale: keep pitch-type means, center them at 100, or none")
     ap.add_argument("--retrain", action="store_true",
                     help="train --variant even when a frozen model exists in models/")

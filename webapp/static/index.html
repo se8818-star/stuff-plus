@@ -21,7 +21,10 @@
     <button type="button" role="tab" id="tabbtn-grader" aria-controls="tab-grader" aria-selected="false" tabindex="-1" data-tab="grader">Grade a pitcher</button>
     <button type="button" role="tab" id="tabbtn-custom" aria-controls="tab-custom" aria-selected="false" tabindex="-1" data-tab="custom">My pitchers</button>
   </nav>
-  <label class="season">Season <select id="season"></select></label>
+  <div class="pickers">
+    <label id="model-picker" hidden>Model <select id="model"></select></label>
+    <label>Season <select id="season"></select></label>
+  </div>
 </header>
 <div id="demo-banner" class="banner" hidden>
   Synthetic demo data. Run <code>python fetch_data.py</code>, then <code>python serve.py --rebuild</code> for real leaderboards.
