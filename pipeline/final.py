@@ -1,7 +1,7 @@
 """
 Phase 4: train the shipped models on 2022-2026 and produce the 2026 outputs.
 
-    python final.py            # fits, saves models/, writes leaderboards/ and reports/
+    python -m pipeline.final            # fits, saves models/, writes leaderboards/ and reports/
 
 Two models, same feature set (A) and settings:
 
@@ -28,13 +28,13 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
-import run_ablation as ra
-from develop import pitcher_table, shrink, split_half_k, stuff_plus
-from features import load
-from models import (AMENDED, CANDIDATES, SEEDS, TJ_PARAMS, add_outcome_flags, crossfit_xrv,
+from stuffplus import run_ablation as ra
+from pipeline.develop import pitcher_table, shrink, split_half_k, stuff_plus
+from stuffplus.features import load
+from stuffplus.models import (AMENDED, CANDIDATES, SEEDS, TJ_PARAMS, add_outcome_flags, crossfit_xrv,
                     fit_seed_models, predict_seed_models)
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 VERSION = "1.1.0"
 MODEL = "A"
 YEARS, SEASON = [2022, 2023, 2024, 2025, 2026], 2026
@@ -124,7 +124,7 @@ def leaderboards(d, s, k_p, k_pt, sfx, out):
     by_type = qt.groupby("pitch_type").agg(pairs=("stuff_plus", "size"), mean=("stuff_plus", "mean"),
                                            sd=("stuff_plus", "std")).reindex(ra.PITCH_TYPES)
     parks = park_check(d, s)
-    parks.round(3).to_csv(HERE / "reports" / f"park_check_{SEASON}{sfx}.csv")
+    parks.round(3).to_csv(ROOT / "reports" / f"park_check_{SEASON}{sfx}.csv")
     return {"qualified_pitchers": len(q), "qualified_pitch_types": len(qt),
             "pitcher_stuff_plus_sd": float(q["stuff_plus"].std()), "velo_r": float(q["stuff_plus"].corr(q["velo"])),
             "sp_rp": sp_rp, "by_hand": hand, "by_pitch_type": by_type.to_dict("index"),
@@ -141,7 +141,7 @@ def main():
     t0 = time.time()
     spec = CANDIDATES[MODEL]
     feats = spec["features"]
-    df = add_outcome_flags(load(HERE / "data", YEARS))
+    df = add_outcome_flags(load(ROOT / "data", YEARS))
     df = df[df["target"].notna()].reset_index(drop=True)
     cur = (df["year"] == SEASON).to_numpy()
     print(f"loaded {len(df):,} pitches ({time.time() - t0:.0f}s)", flush=True)
@@ -167,7 +167,7 @@ def main():
     scale = {"": {"xrv_mean": float(np.nanmean(fwd)), "xrv_sd": float(np.nanstd(fwd))},
              "_no_remembering": {"xrv_mean": float(np.nanmean(oof[cur])), "xrv_sd": float(np.nanstd(oof[cur]))}}
 
-    (HERE / "models").mkdir(exist_ok=True)
+    (ROOT / "models").mkdir(exist_ok=True)
     common = {
         "version": VERSION, "feature_set": MODEL, "features": feats, "target": spec["target"],
         "lightgbm_params": {**TJ_PARAMS, **(params or {})}, "seeds": list(SEEDS), "train_years": YEARS,
@@ -188,15 +188,15 @@ def main():
           "artifact": f"dict with fold_models (5 folds x {len(SEEDS)} LGBMRegressor), pitcher_fold "
                       "(MLBAM id -> held-out fold) and features"})):
         tag = f"stuffplus{sfx}_v{VERSION}"
-        joblib.dump(artifact, HERE / "models" / f"{tag}.joblib")
+        joblib.dump(artifact, ROOT / "models" / f"{tag}.joblib")
         meta = {"name": NAMES[sfx], "file": f"models/{tag}.joblib (not in git)", **common, **extra,
                 "scaling": {**scale[sfx], "season": SEASON,
                             "formula": "stuff_plus = 100 - 10 * (xRV - xrv_mean) / xrv_sd"}}
-        (HERE / "models" / f"{tag}.json").write_text(json.dumps(meta, indent=1, default=float))
+        (ROOT / "models" / f"{tag}.json").write_text(json.dumps(meta, indent=1, default=float))
 
     # 3. 2026 leaderboards and checks for both
     d = df[cur].copy()
-    out = HERE / "leaderboards"
+    out = ROOT / "leaderboards"
     out.mkdir(exist_ok=True)
     scores = {"": stuff_plus(fwd, fwd), "_no_remembering": stuff_plus(oof[cur], oof[cur])}
     summary = {"version": VERSION, "season": SEASON, "min_pitcher": MIN_PITCHER, "min_pitch_type": MIN_PITCH_TYPE,
@@ -222,11 +222,11 @@ def main():
         "remembering_higher": big.nlargest(8, "difference")[["player_name", "pitches", "stuff_plus", "stuff_plus_no_remembering", "difference"]].to_dict("records"),
         "remembering_lower": big.nsmallest(8, "difference")[["player_name", "pitches", "stuff_plus", "stuff_plus_no_remembering", "difference"]].to_dict("records")}
     all_s = stuff_plus(oof, oof[cur])
-    park_check(df, all_s).round(3).to_csv(HERE / "reports" / "park_check_2022_2026_no_remembering.csv")
+    park_check(df, all_s).round(3).to_csv(ROOT / "reports" / "park_check_2022_2026_no_remembering.csv")
     summary["league_no_remembering_by_year"] = {int(y): float(np.nanmean(all_s[(df["year"] == y).to_numpy()])) for y in YEARS}
     summary["env"], summary["seconds"] = ra.env_info(), time.time() - t0
-    (HERE / "results").mkdir(exist_ok=True)
-    (HERE / "results" / "final_summary.json").write_text(json.dumps(summary, indent=1, default=float))
+    (ROOT / "results").mkdir(exist_ok=True)
+    (ROOT / "results" / "final_summary.json").write_text(json.dumps(summary, indent=1, default=float))
     print(json.dumps({"agreement": {k: v for k, v in summary["agreement"].items() if not isinstance(v, list)},
                       "scaling": scale}, indent=1, default=float))
     print(f"done ({time.time() - t0:.0f}s)")

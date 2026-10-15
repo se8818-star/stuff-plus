@@ -4,9 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import run_ablation as ra
-
-
+from stuffplus import run_ablation as ra
 def table(n=60, seed=0):
     rng = np.random.default_rng(seed)
     s = rng.normal(100, 10, n)
@@ -79,8 +77,8 @@ def test_pitch_type_stickiness_uses_per_type_minimum():
 
 
 def test_grid_is_two_dimensional_on_synthetic_data():
-    from features import add_features
-    from synthetic import make
+    from stuffplus.features import add_features
+    from stuffplus.synthetic import make
     df = add_features(make(n_pitchers=10, pitches_per_season=80, years=(2024,)))
     cum, detail = ra.redundancy_report(df)
     assert cum[1] > 0.999 and cum[0] < 0.95

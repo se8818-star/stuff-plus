@@ -2,7 +2,7 @@
 Run the local Stuff+ website:  python serve.py   ->  http://127.0.0.1:8000
 
 On first run it builds the leaderboards (webapp/build.py). With data/ and the
-shipped models in models/ (final.py), it builds one bundle per frozen model
+shipped models in models/ (pipeline/final.py), it builds one bundle per frozen model
 (Stuff+ (no remembering), Stuff+ (remembering), S6; whichever are present) and
 the page's model menu switches between them. It opens on Stuff+ (no remembering):
 its published leaderboards, every season and the grader out-of-fold. With data/
@@ -20,8 +20,7 @@ from pathlib import Path
 
 import uvicorn
 
-import webapp  # noqa: F401  (puts the repo root on sys.path)
-from features import VARIANTS
+from stuffplus.features import VARIANTS
 from webapp.app import create_app
 from webapp.build import build, bundle_path, site_models
 
@@ -50,7 +49,7 @@ def main():
     if paths is None:
         synthetic = a.synthetic or not any((ROOT / "data").glob("statcast_*.parquet"))
         if synthetic and not a.synthetic:
-            print("No data/ found: serving SYNTHETIC demo data. Run `python fetch_data.py` "
+            print("No data/ found: serving SYNTHETIC demo data. Run `python -m pipeline.fetch_data` "
                   "then `python serve.py --rebuild` for real leaderboards.")
         variant = a.variant or "A_tj_v3"
         metas = [] if (synthetic or a.variant or a.train) else site_models()

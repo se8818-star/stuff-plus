@@ -22,6 +22,6 @@ python -m pip install -r requirements.txt
 python -c "import lightgbm; print('LightGBM', lightgbm.__version__)" \
   || echo "LightGBM unavailable: will fall back to scikit-learn."
 
-python run_ablation.py --synthetic --variants A_tj_v3 --boot 50
+python -m stuffplus.run_ablation --synthetic --variants A_tj_v3 --boot 50
 echo
-echo "Setup OK. Next: source .venv/bin/activate && python fetch_data.py"
+echo "Setup OK. Next: source .venv/bin/activate && python -m pipeline.fetch_data"

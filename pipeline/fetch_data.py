@@ -2,9 +2,9 @@
 Download regular-season Statcast pitch data (2022-2026 by default) and cache it
 as one parquet per season in ./data/.
 
-    python fetch_data.py                 # 2022-2026
-    python fetch_data.py 2022 2026       # custom range (inclusive)
-    python fetch_data.py --force 2026    # rebuild one season from scratch
+    python -m pipeline.fetch_data                 # 2022-2026
+    python -m pipeline.fetch_data 2022 2026       # custom range (inclusive)
+    python -m pipeline.fetch_data --force 2026    # rebuild one season from scratch
 
 Resumable: each season is pulled in 7-day chunks, every chunk is written to
 data/chunks/<year>/ as soon as it arrives, and a rerun only requests the chunks
@@ -125,7 +125,7 @@ def main():
     args = ap.parse_args()
     lo, hi = (args.years + args.years)[:2] if args.years else (2022, 2026)
 
-    d = Path(__file__).parent / "data"
+    d = Path(__file__).resolve().parent.parent / "data"
     d.mkdir(exist_ok=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         datefmt="%H:%M:%S",

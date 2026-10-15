@@ -4,10 +4,10 @@ How much does the model memorise the pitchers it was trained on?
 Compares three kinds of prediction from the same recipe (train 2022-23):
   in-sample        the pitches the model was trained on
   out-of-pitcher   the same pitches, predicted by a model that never saw that
-                   pitcher (5-fold GroupKFold, cached by develop.py)
+                   pitcher (5-fold GroupKFold, cached by pipeline/develop.py)
   next seasons     2024 and 2025 pitches
 
-    python overfit_check.py     # writes results/overfit_check.json, reports/overfit_check.md
+    python -m experiments.overfit_check     # writes results/overfit_check.json, reports/overfit_check.md
 """
 import json
 from pathlib import Path
@@ -15,11 +15,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import run_ablation as ra
-from develop import KEY, TRAIN_YEARS, load_dev, pitcher_table, stuff_plus, table
-from models import AMENDED, CANDIDATES, fit_predict
+from stuffplus import run_ablation as ra
+from pipeline.develop import KEY, TRAIN_YEARS, load_dev, pitcher_table, stuff_plus, table
+from stuffplus.models import AMENDED, CANDIDATES, fit_predict
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def r2(y, p):
@@ -46,7 +46,7 @@ def main():
     specs = {**CANDIDATES, **AMENDED}
     for name in ("A", "S6"):
         (p_in,), _ = fit_predict(specs[name], tr, [tr])
-        cache = pd.read_parquet(HERE / "results" / "preds" / f"stage1_{name}.parquet")
+        cache = pd.read_parquet(ROOT / "results" / "preds" / f"stage1_{name}.parquet")
         d = df.merge(cache[KEY + ["xrv"]], on=KEY, how="left", validate="1:1")
         oof = d.loc[d["year"].isin(TRAIN_YEARS), "xrv"].to_numpy()
         y = tr["target"].to_numpy()
@@ -69,7 +69,7 @@ def main():
         out[name] = res
         print(name, json.dumps(res, indent=1))
     out["env"] = ra.env_info()
-    (HERE / "results" / "overfit_check.json").write_text(json.dumps(out, indent=1))
+    (ROOT / "results" / "overfit_check.json").write_text(json.dumps(out, indent=1))
     rows = []
     for n in ("A", "S6"):
         p, q = out[n]["pitch_r2"], out[n]["pitcher_2023"]
@@ -87,7 +87,7 @@ def main():
                  "Same-season RV/100, in-sample", "Same-season RV/100, out-of-pitcher",
                  "Next-season RV/100, in-sample", "Next-season RV/100, out-of-pitcher",
                  "r(in-sample, out-of-pitcher)"], rows), ""]
-    (HERE / "reports" / "overfit_check.md").write_text("\n".join(md))
+    (ROOT / "reports" / "overfit_check.md").write_text("\n".join(md))
 
 
 if __name__ == "__main__":

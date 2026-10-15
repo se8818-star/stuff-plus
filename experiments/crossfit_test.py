@@ -1,8 +1,8 @@
 """
-Exploratory analysis E2 (EXPLORATORY.md): cross-fitted scoring (no memory of
+Exploratory analysis E2 (docs/EXPLORATORY.md): cross-fitted scoring (no memory of
 the pitcher) against the remembering model, forward in time.
 
-    python crossfit_test.py     # results/crossfit_test.json, reports/crossfit_test.md
+    python -m experiments.crossfit_test     # results/crossfit_test.json, reports/crossfit_test.md
 """
 import json
 import time
@@ -12,12 +12,12 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
-import run_ablation as ra
-from develop import KEY, MIN_PITCHES, N_BOOT, pitcher_table, stuff_plus, table
-from features import load
-from models import CANDIDATES, add_outcome_flags, fit_predict
+from stuffplus import run_ablation as ra
+from pipeline.develop import KEY, MIN_PITCHES, N_BOOT, pitcher_table, stuff_plus, table
+from stuffplus.features import load
+from stuffplus.models import CANDIDATES, add_outcome_flags, fit_predict
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 FIRST, EVAL_YEARS, N_FOLDS = 2020, [2022, 2023, 2024, 2025], 5
 METHODS = ("remember", "crossfit")
 
@@ -47,10 +47,10 @@ def crossfit_predict(spec, train, frames, n_folds=N_FOLDS, params=None, log=lamb
 def main():
     t0 = time.time()
     years = list(range(FIRST, EVAL_YEARS[-1] + 2))
-    df = add_outcome_flags(load(HERE / "data", years))
+    df = add_outcome_flags(load(ROOT / "data", years))
     df = df[df["target"].notna()].reset_index(drop=True)
     spec = CANDIDATES["A"]
-    pdir = HERE / "results" / "preds"
+    pdir = ROOT / "results" / "preds"
     pdir.mkdir(parents=True, exist_ok=True)
     res, tables, agree = {}, {}, {}
     for y in EVAL_YEARS:
@@ -103,12 +103,12 @@ def main():
                  for mn in MIN_PITCHES} for m in METHODS}
     out = {"eval_years": EVAL_YEARS, "results": res, "means": means, "crossfit_minus_remember": vs,
            "agreement": agree, "verdict": verdict, "env": ra.env_info(), "seconds": time.time() - t0}
-    (HERE / "results" / "crossfit_test.json").write_text(json.dumps(out, indent=1, default=float))
+    (ROOT / "results" / "crossfit_test.json").write_text(json.dumps(out, indent=1, default=float))
 
     H = {"stickiness": "Stickiness", "next_woba": "Next wOBA", "next_k_bb": "Next K−BB%", "next_rv100": "Next RV/100"}
     ci = lambda d, k: f"{d['diff'][k]:+.3f} [{d['ci'][k][0]:+.3f}, {d['ci'][k][1]:+.3f}]"  # noqa: E731
     md = ["# E2: cross-fitted scoring against the remembering model, forward in time", "",
-          "Exploratory (plan in `EXPLORATORY.md`, committed before this was run). Feature set A, TJ's settings, "
+          "Exploratory (plan in `docs/EXPLORATORY.md`, committed before this was run). Feature set A, TJ's settings, "
           "3 seeds. Each split trains on every season from 2020 up to the year before the scored one. "
           "*Remembering* is one model on all training pitchers; *cross-fitted* scores each pitcher with a fold "
           "model that never saw him. Differences are cross-fitted minus remembering with paired-bootstrap 95% CIs.", "",
@@ -133,7 +133,7 @@ def main():
                   f"{res[y]['remember_all_100']['stickiness']:.3f}", f"{res[y]['crossfit_all_100']['stickiness']:.3f}",
                   f"{agree[y]['r']:.3f}"] for y in EVAL_YEARS]), "",
           "Library versions: " + ", ".join(f"{k} {v}" for k, v in out["env"].items() if v), ""]
-    (HERE / "reports" / "crossfit_test.md").write_text("\n".join(md))
+    (ROOT / "reports" / "crossfit_test.md").write_text("\n".join(md))
     print("\n".join(md[4:]))
 
 

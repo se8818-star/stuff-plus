@@ -4,16 +4,16 @@ Save a v1.0.0 leaderboard's out-of-fold models so the website can use them.
     python -m webapp.folds --model models/stuffplus_v1.0.0.json
                                 # writes models/stuffplus_v1.0.0_folds.joblib
 
-Only for v1.0.0 models. From v1.1.0, final.py saves the fold models itself in
+Only for v1.0.0 models. From v1.1.0, pipeline/final.py saves the fold models itself in
 models/stuffplus_no_remembering_v<version>.joblib and the website reads them
 from there, so this step is not needed and exits straight away.
 
-v1.0.0's final.py scores the published leaderboards out-of-fold: 5-fold GroupKFold by
+v1.0.0's pipeline/final.py scores the published leaderboards out-of-fold: 5-fold GroupKFold by
 pitcher over 2022-2026, each fold three LightGBM seeds averaged, so no pitcher
 is scored by a model that saw his pitches. It keeps only the predictions. This
 refits exactly those fold models (same pitches, folds, settings and seeds),
 saves them with each pitcher's fold, and checks that they reproduce the
-published leaderboard. final.py, the shipped model and leaderboards/ are not
+published leaderboard. pipeline/final.py, the shipped model and leaderboards/ are not
 changed. Run `python serve.py --rebuild` afterwards.
 """
 from __future__ import annotations
@@ -30,9 +30,8 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
 
-from webapp.grading import AveragedModel  # noqa: E402
+from webapp.grading import AveragedModel
 
 N_SPLITS = 5
 
@@ -43,7 +42,7 @@ def folds_path(frozen):
 
 
 def fit_folds(df, feats, target, make, seeds, n_splits=N_SPLITS, log=print):
-    """final.py's out-of-fold models: GroupKFold by pitcher over `df`'s rows in
+    """pipeline/final.py's out-of-fold models: GroupKFold by pitcher over `df`'s rows in
     order; fold k is `make(seed)` fitted on the other folds' pitches, once per
     seed. Returns the fitted models (one list of seeds per fold) and the fold
     each pitcher was held out of."""
@@ -74,9 +73,9 @@ def oof_predict(folds, pitcher_fold, X, pitchers, fallback):
 
 
 def check_published(models, pitcher_fold, df, meta):
-    """Re-score the published season out-of-fold, exactly as final.py does, and
+    """Re-score the published season out-of-fold, exactly as pipeline/final.py does, and
     compare with leaderboards/pitchers_<season>.csv."""
-    from develop import pitcher_table, stuff_plus
+    from pipeline.develop import pitcher_table, stuff_plus
     feats, season = meta["features"], int(meta["scaling"]["season"])
     d = df[df["year"] == season]
     ok = d[feats].notna().all(axis=1).to_numpy()
@@ -119,7 +118,7 @@ def main(argv=None):
     from webapp.build import frozen_meta
     meta_path = a.model or frozen_meta()
     if meta_path is None:
-        raise SystemExit("No frozen model in models/. Run `python final.py` first.")
+        raise SystemExit("No frozen model in models/. Run `python -m pipeline.final` first.")
     meta = json.loads(Path(meta_path).read_text())
     if already_has_folds(meta, meta_path):          # before any data loading or fitting
         raise SystemExit(
@@ -129,9 +128,9 @@ def main(argv=None):
             "(`python -m webapp.folds --model models/stuffplus_v1.0.0.json`).")
     feats, target = meta["features"], meta["target"]
 
-    # the same pitches, in the same order, as final.py
-    from features import load
-    from models import add_outcome_flags
+    # the same pitches, in the same order, as pipeline/final.py
+    from stuffplus.features import load
+    from stuffplus.models import add_outcome_flags
     t0 = time.time()
     df = add_outcome_flags(load(ROOT / "data", meta["train_years"]))
     df = df[df["target"].notna()].reset_index(drop=True)
@@ -146,7 +145,7 @@ def main(argv=None):
     print(json.dumps(check, indent=1))
     if not check.get("reproduces"):
         print("WARNING: these fold models do not reproduce the published leaderboard exactly. "
-              "Has data/ or a library version changed since final.py ran?")
+              "Has data/ or a library version changed since pipeline/final.py ran?")
 
     import lightgbm
     import sklearn

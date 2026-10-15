@@ -1,9 +1,9 @@
 """
-One-shot confirmation on the locked fold 2 (PREREGISTRATION.md):
+One-shot confirmation on the locked fold 2 (docs/PREREGISTRATION.md):
 train 2022-24, score 2025, validate against 2026, for frozen A and the frozen
 candidates named in FROZEN.json only.
 
-    python confirm.py --unlock-fold2
+    python -m pipeline.confirm --unlock-fold2
 
 Refuses to run unless FROZEN.json exists and is committed, and refuses to run a
 second time (results/confirmation.json already present).
@@ -19,12 +19,12 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
-import run_ablation as ra
-from develop import KEY, MIN_PITCHES, N_BOOT, N_INNER, pitcher_table, shrink, split_half_k, stuff_plus
-from features import load
-from models import AMENDED, CANDIDATES, add_outcome_flags, fit_predict
+from stuffplus import run_ablation as ra
+from pipeline.develop import KEY, MIN_PITCHES, N_BOOT, N_INNER, pitcher_table, shrink, split_half_k, stuff_plus
+from stuffplus.features import load
+from stuffplus.models import AMENDED, CANDIDATES, add_outcome_flags, fit_predict
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 TRAIN_YEARS, EVAL_YEAR = [2022, 2023, 2024], 2025
 
 
@@ -102,26 +102,26 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--unlock-fold2", action="store_true")
     args = ap.parse_args()
-    frozen_path, out_path = HERE / "FROZEN.json", HERE / "results" / "confirmation.json"
+    frozen_path, out_path = ROOT / "FROZEN.json", ROOT / "results" / "confirmation.json"
     if not args.unlock_fold2:
         sys.exit("Fold 2 is the one-shot confirmation test; pass --unlock-fold2 to run it.")
     if not frozen_path.exists():
         sys.exit("FROZEN.json not found: freeze the candidate before touching fold 2.")
-    dirty = subprocess.run(["git", "status", "--porcelain", "--", "FROZEN.json", "FROZEN.md"],
-                           cwd=HERE, capture_output=True, text=True).stdout.strip()
-    tracked = subprocess.run(["git", "ls-files", "FROZEN.json"], cwd=HERE, capture_output=True, text=True).stdout.strip()
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", "FROZEN.json", "docs/FROZEN.md"],
+                           cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    tracked = subprocess.run(["git", "ls-files", "FROZEN.json"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     if dirty or not tracked:
-        sys.exit("FROZEN.json / FROZEN.md must be committed before fold 2 is run.")
+        sys.exit("FROZEN.json / docs/FROZEN.md must be committed before fold 2 is run.")
     if out_path.exists():
         sys.exit("results/confirmation.json exists: the confirmation has already been run once.")
 
     t0 = time.time()
     frozen = json.loads(frozen_path.read_text())
-    df = add_outcome_flags(load(HERE / "data", TRAIN_YEARS + [EVAL_YEAR, EVAL_YEAR + 1]))
+    df = add_outcome_flags(load(ROOT / "data", TRAIN_YEARS + [EVAL_YEAR, EVAL_YEAR + 1]))
     df = df[df["target"].notna()].reset_index(drop=True)
     out = run_confirmation(df, frozen, TRAIN_YEARS, EVAL_YEAR, log=lambda m: print(m, flush=True))
     out["env"] = ra.env_info()
-    out["frozen_commit"] = subprocess.run(["git", "rev-parse", "HEAD"], cwd=HERE, capture_output=True,
+    out["frozen_commit"] = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
                                           text=True).stdout.strip()
     out["seconds"] = time.time() - t0
     out_path.write_text(json.dumps(out, indent=1, default=float))

@@ -3,9 +3,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-import fetch_data as fd
-
-
+from pipeline import fetch_data as fd
 def fake_fetch(calls, fail_first=0):
     def fetch(a, b):
         calls.append((a, b))
