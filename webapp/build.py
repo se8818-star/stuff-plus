@@ -141,7 +141,7 @@ def to_grades(x, mean, sd):
 
 
 def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
-          synth_size=(220, 500), frozen=None, spread="keep"):
+          synth_size=(220, 500), frozen=None, spread=None):
     """Train `variant` (or load the frozen model whose metadata JSON is
     `frozen`), score every season and save the website bundle. `spread`
     ("keep", "center" or None) rescales displayed Stuff+ so each pitch type,
@@ -322,9 +322,10 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         keep = rows["year"].isin(official) & rows["grade"].notna() if "grade" in rows else False
         rows["grade"] = np.where(keep, rows.get("grade", g), g)
 
+    for rows in (tot, pt):
+        rows["stuff_plus_model"] = rows["stuff_plus"]
     if spread:
         for rows, which in ((tot, "pitcher"), (pt, "pitch_type")):
-            rows["stuff_plus_model"] = rows["stuff_plus"]
             rows["stuff_plus"] = [
                 rescale(x, grades[y]["pitcher"] if which == "pitcher" else
                         grades[y]["pitch_type"].get(t, grades[y]["all_pitches"]), spread)
@@ -376,7 +377,7 @@ def main():
     ap.add_argument("--train", nargs="*", type=int, help="training seasons (default: all)")
     ap.add_argument("--synthetic", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--spread", default="keep", choices=["keep", "center", "none"],
+    ap.add_argument("--spread", default="none", choices=["keep", "center", "none"],
                     help="SD-10 display scale: keep pitch-type means, center them at 100, or none")
     ap.add_argument("--retrain", action="store_true",
                     help="train --variant even when a frozen model exists in models/")

@@ -12,7 +12,7 @@ from webapp.grading import accel_to_movement, grade_arsenal, movement_to_accel
 @pytest.fixture(scope="module")
 def bundle_file(tmp_path_factory):
     out = tmp_path_factory.mktemp("models") / "bundle.joblib"
-    return build(synthetic=True, out=out, synth_size=(40, 120))
+    return build(synthetic=True, out=out, synth_size=(40, 120), spread="keep")
 
 
 @pytest.fixture(scope="module")
@@ -190,6 +190,15 @@ def test_spread_rescale(bundle):
             if len(g) >= 5:
                 assert g["stuff_plus"].std(ddof=0) == pytest.approx(10)
                 assert g["stuff_plus"].mean() == pytest.approx(g["stuff_plus_model"].mean())
+
+
+def test_default_scale_is_raw(tmp_path):
+    """By default the site shows the model's own scale (as tjStuff+ does):
+    displayed Stuff+ equals stuff_plus_model for pitchers and pitch types."""
+    b = joblib.load(build(synthetic=True, out=tmp_path / "raw.joblib", synth_size=(40, 120)))
+    assert b["spread"] is None
+    for k in ("pitchers", "pitch_types"):
+        assert b[k]["stuff_plus"].equals(b[k]["stuff_plus_model"])
 
 
 def test_custom_pitchers(bundle_file, tmp_path):

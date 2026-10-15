@@ -840,7 +840,7 @@ function renderMethodology() {
   const notes = [...m.seasons].reverse().map(y => m.season_notes[y] ? `<li>${y}: ${esc(m.season_notes[y])}</li>` : "").join("");
   $("#method-body").innerHTML = `
     <p>Stuff+ grades each pitch from its physical traits (velocity, spin, movement, release and extension), not
-      from results, then averages a pitcher's pitches. 100 is league average${m.spread ? " and 10 points is one standard deviation" : ""}.
+      from results, then averages a pitcher's pitches. 100 is league average${m.spread ? " and 10 points is one standard deviation" : ". Each pitch is scored with 10 points as one standard deviation, so pitcher averages are closer together, about 5 points per standard deviation"}.
       Grades put the same number on the 20–80 scouting scale.${m.frozen ? " Scores are shrunk toward average for pitchers with few pitches." : ""}</p>
     <p>Model: ${esc(m.label)}${m.synthetic ? " · synthetic demo data" : ""}. Built ${esc(m.built_at)}.</p>
     <p>Features: ${esc(m.features.join(", "))}.</p>

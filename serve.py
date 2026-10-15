@@ -34,7 +34,7 @@ def main():
     ap.add_argument("--synthetic", action="store_true", help="use synthetic demo data")
     ap.add_argument("--rebuild", action="store_true", help="retrain even if a model bundle exists")
     ap.add_argument("--bundle", type=Path, help="serve a specific models/*.joblib bundle")
-    ap.add_argument("--spread", default="keep", choices=["keep", "center", "none"],
+    ap.add_argument("--spread", default="none", choices=["keep", "center", "none"],
                     help="show Stuff+ with an SD of 10 per pitch type (keep type means / center at 100) "
                          "or exactly as the model outputs it (none); needs --rebuild to change")
     ap.add_argument("--host", default="127.0.0.1")
