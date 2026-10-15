@@ -54,6 +54,7 @@ python -m experiments.overfit_check     # reports/overfit_check.md
 python -m experiments.holdout_check     # reports/holdout_2025_2026.md
 python -m pipeline.fetch_data 2020 2021 && python -m experiments.pitcher_holdout   # reports/pitcher_holdout.md (exploratory)
 python -m experiments.crossfit_test     # reports/crossfit_test.md: what remembering is worth (exploratory)
+python -m experiments.tjstats_comparison.fetch   # then .build and .analyze: reports/tjstats_comparison.md (exploratory)
 python -m stuffplus.run_ablation --synthetic   # smoke test, no data needed
 ```
 
