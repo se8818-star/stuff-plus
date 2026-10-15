@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from physics import grid_angles, VAA_GRID_COLS, HAA_GRID_COLS
+from physics import Y50, _time_to_y, grid_angles, VAA_GRID_COLS, HAA_GRID_COLS
 
 HERE = Path(__file__).parent
 FASTBALLS = ["FF", "SI", "FC"]
@@ -62,22 +62,81 @@ VARIANTS = {
     "E_plus_arm_angle": TJ_V3 + ["arm_angle"],
     # F: baseline + spin axis (listed in the v3.0 article, not in the notebook)
     "F_plus_spin_axis": TJ_V3 + ["spin_axis"],
+    # G: baseline + batter handedness as same-side (1) vs opposite-side (0)
+    "G_plus_same_side": TJ_V3 + ["same_side"],
+    # H: baseline + seam-shifted-wake proxy (observed minus movement-implied spin axis)
+    "H_plus_ssw": TJ_V3 + ["ssw_dev"],
+    # I: baseline features, training seasons weighted by recency (see SPECS)
+    "I_recency_weighted": TJ_V3,
+    # J: baseline features, balls in play valued by xwOBA instead of the outcome (see SPECS)
+    "J_expected_target": TJ_V3,
+    # Grid collapsed to its centre point (the 18 grid angles are ~2-dimensional)
+    "C1_center_no_accel": [f for f in TJ_V3 if f not in ("az", "ax")] + CENTER,
+    # Reference only: A with release x/z taken from the fit at y=50, which is
+    # what TJ's MLB-API x0/z0 are (closer to his shipped model, not the baseline)
+    "A50_tj_v3_y50": [{"x0": "x0_50", "z0": "z0_50"}.get(f, f) for f in TJ_V3],
 }
+
+# Training options per variant; anything not listed trains on `target`, unweighted.
+#   target  - column to fit
+#   recency - weight of a training season = recency ** (seasons before the latest one)
+SPECS = {
+    "I_recency_weighted": {"recency": 0.5},
+    "J_expected_target": {"target": "target_x"},
+}
+
+# Statcast's wOBA weights for balls in play (woba_value), used to turn xwOBA into runs
+WOBA_BIP = {"field_out": 0.0, "single": 0.9, "double": 1.25, "triple": 1.6, "home_run": 2.0}
+# Rough share of balls in play, so the per-count line is pinned by outs and
+# singles rather than by the table's noisy triple values
+BIP_SHARE = {"field_out": 0.67, "single": 0.21, "double": 0.065, "triple": 0.005, "home_run": 0.05}
 
 
 def add_target(df: pd.DataFrame) -> pd.DataFrame:
     """Count-specific run value per pitch, TJ-style: terminal events use the
-    event's value in that count, otherwise the pitch description's value."""
-    rv = pd.read_csv(HERE / "run_values.csv")
-    lut = {(e, b, s): v for e, b, s, v in rv.itertuples(index=False)}
-    evt = df["events"].map(EVT)
-    des = df["description"].map(DES)
-    b, s = df["balls"].to_numpy(), df["strikes"].to_numpy()
-    v_evt = [lut.get((e, bb, ss), np.nan) if isinstance(e, str) else np.nan
-             for e, bb, ss in zip(evt, b, s)]
-    v_des = [lut.get((d, bb, ss), np.nan) if isinstance(d, str) else np.nan
-             for d, bb, ss in zip(des, b, s)]
+    event's value in that count, otherwise the pitch description's value.
+    Outcomes TJ leaves unmapped (field_error, strikeout_double_play, ...) get
+    NaN and are dropped at train/score time, as in his notebook."""
+    rv = pd.read_csv(HERE / "run_values.csv").astype({"balls": float, "strikes": float})
+    count = {c: pd.to_numeric(df[c], errors="coerce").to_numpy(dtype=float)
+             for c in ("balls", "strikes")}
+
+    def lookup(outcome):
+        key = pd.DataFrame({"event": outcome.to_numpy(dtype=object), **count})
+        return key.merge(rv, how="left", on=["event", "balls", "strikes"])["delta_run_exp"].to_numpy()
+
+    v_evt = lookup(df["events"].map(EVT))
+    v_des = lookup(df["description"].map(DES))
     df["target"] = np.where(np.isnan(v_evt), v_des, v_evt)
+    return df
+
+
+def xwoba_to_runs() -> pd.DataFrame:
+    """Per count, the straight line through the run-value table's in-play
+    outcomes as a function of their wOBA weight (frequency-weighted least
+    squares): runs = a + b * wOBA."""
+    rv = pd.read_csv(HERE / "run_values.csv")
+    rv = rv[rv["event"].isin(WOBA_BIP)].assign(w=lambda d: d["event"].map(WOBA_BIP))
+    rows = []
+    for (b, s), g in rv.groupby(["balls", "strikes"]):
+        slope, icpt = np.polyfit(g["w"], g["delta_run_exp"], 1,
+                                 w=np.sqrt(g["event"].map(BIP_SHARE)))
+        rows.append((float(b), float(s), icpt, slope))
+    return pd.DataFrame(rows, columns=["balls", "strikes", "xrv_a", "xrv_b"])
+
+
+def add_expected_target(df: pd.DataFrame) -> pd.DataFrame:
+    """target_x: like `target`, but balls in play are valued by their xwOBA
+    (estimated_woba_using_speedangle) converted to runs for the count, instead
+    of by what happened. Non-contact pitches, and balls in play with no xwOBA,
+    keep `target`."""
+    count = pd.DataFrame({c: pd.to_numeric(df[c], errors="coerce").to_numpy(dtype=float)
+                          for c in ("balls", "strikes")})
+    line = count.merge(xwoba_to_runs(), how="left", on=["balls", "strikes"])
+    xw = pd.to_numeric(df["estimated_woba_using_speedangle"], errors="coerce").to_numpy(dtype=float)
+    xrv = line["xrv_a"].to_numpy() + line["xrv_b"].to_numpy() * xw
+    in_play = (df["description"] == "hit_into_play").to_numpy()
+    df["target_x"] = np.where(in_play & np.isfinite(xrv), xrv, df["target"].to_numpy(dtype=float))
     return df
 
 
@@ -104,23 +163,45 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     for c in GRID + CENTER:
         df[c] = raw[c].to_numpy()
 
-    # Primary fastball per pitcher-season (most-used of FF/SI/FC)
-    fb = df[df["pitch_type"].isin(FASTBALLS)]
-    agg = (fb.groupby(["pitcher", "year", "pitch_type"])
-             .agg(fb_speed=("start_speed", "mean"), fb_az=("az", "mean"),
-                  fb_ax=("ax", "mean"), fb_vaa=("vaa_ln", "mean"),
-                  fb_haa=("haa_ln", "mean"), n=("start_speed", "size"))
-             .reset_index()
-             .sort_values(["n", "fb_speed"], ascending=False)
-             .drop_duplicates(["pitcher", "year"]))
-    df = df.merge(agg.drop(columns=["pitch_type", "n"]), on=["pitcher", "year"], how="left")
+    # Release point as the fit's position at y=50 (TJ's MLB-API x0/z0)
+    t_r = _time_to_y(Y50, df["vy0"].to_numpy(), df["ay"].to_numpy(),
+                     60.5 - df["release_extension"].to_numpy())      # negative
+    x50 = df["release_pos_x"] - df["vx0"] * t_r - 0.5 * raw["ax"].to_numpy() * t_r ** 2
+    df["x0_50"] = np.where(lhp, x50, -x50)
+    df["z0_50"] = df["release_pos_z"] - df["vz0"] * t_r - 0.5 * df["az"] * t_r ** 2
 
-    # No fastball: fall back to the pitcher-season's hardest pitch
-    hardest = df.groupby(["pitcher", "year"])["start_speed"].transform("idxmax")
-    for col, src in [("fb_speed", "start_speed"), ("fb_az", "az"), ("fb_ax", "ax"),
-                     ("fb_vaa", "vaa_ln"), ("fb_haa", "haa_ln")]:
-        fallback = df[src].reindex(hardest.fillna(-1).astype(int)).to_numpy()
-        df[col] = df[col].fillna(pd.Series(fallback, index=df.index))
+    # Batter handedness relative to the pitcher
+    if "stand" in df:
+        df["same_side"] = np.where(df["stand"].isna(), np.nan, (df["stand"] == df["p_throws"]) * 1.0)
+
+    # Seam-shifted-wake proxy: observed spin axis minus the axis a pure Magnus
+    # force would need to produce the observed movement. Statcast spin_axis is
+    # 180 for pure backspin; movement straight up is atan2 = 90, hence the +90.
+    # Wrapped to (-180, 180] and mirrored so the sign means the same for LHP.
+    if {"spin_axis", "pfx_x", "pfx_z"} <= set(df.columns):
+        implied = (np.degrees(np.arctan2(df["pfx_z"], df["pfx_x"])) + 90.0) % 360.0
+        dev = (df["spin_axis"] - implied + 180.0) % 360.0 - 180.0
+        df["ssw_dev"] = np.where(lhp, -dev, dev)
+    # Spin axis itself (variant F) is mirrored into the right-hander's frame
+    if "spin_axis" in df:
+        df["spin_axis"] = np.where(lhp, (360.0 - df["spin_axis"]) % 360.0, df["spin_axis"])
+
+    # Primary fastball per pitcher-season (most-used of FF/SI/FC). Pitcher-seasons
+    # with no fastball fall back to their hardest pitch type by mean velocity
+    # (TJ's notebook inner-joins here, which silently drops them; fb_fallback
+    # flags those rows so they can be excluded for a like-for-like comparison).
+    by_type = (df.groupby(["pitcher", "year", "pitch_type"])
+                 .agg(fb_speed=("start_speed", "mean"), fb_az=("az", "mean"),
+                      fb_ax=("ax", "mean"), fb_vaa=("vaa_ln", "mean"),
+                      fb_haa=("haa_ln", "mean"), n=("start_speed", "size"))
+                 .reset_index())
+    is_fb = by_type["pitch_type"].isin(FASTBALLS)
+    primary = by_type[is_fb].sort_values(["n", "fb_speed"], ascending=False, kind="stable")
+    hardest = by_type[~is_fb].sort_values("fb_speed", ascending=False, kind="stable")
+    ref = (pd.concat([primary.assign(fb_fallback=False), hardest.assign(fb_fallback=True)])
+             .drop_duplicates(["pitcher", "year"])
+             .drop(columns=["pitch_type", "n"]))
+    df = df.merge(ref, on=["pitcher", "year"], how="left")
 
     df["speed_diff"] = df["start_speed"] - df["fb_speed"]
     df["az_diff"] = df["az"] - df["fb_az"]
@@ -130,9 +211,25 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def plain_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """pybaseball returns pandas nullable dtypes (Int64/Float64 with pd.NA), which
+    turn into object arrays under .to_numpy(). Convert to plain numpy dtypes:
+    floats (and ints with missing values) -> float64 with NaN."""
+    df = df.copy()
+    for c in df.columns:
+        dt = df[c].dtype
+        if pd.api.types.is_extension_array_dtype(dt) and pd.api.types.is_numeric_dtype(dt):
+            if pd.api.types.is_integer_dtype(dt) and not df[c].isna().any():
+                df[c] = df[c].astype("int64")
+            else:
+                df[c] = df[c].astype("float64")
+    return df
+
+
 def load(data_dir: Path, years) -> pd.DataFrame:
     frames = [pd.read_parquet(data_dir / f"statcast_{y}.parquet") for y in years]
-    df = pd.concat(frames, ignore_index=True)
-    df = df[df["pitch_type"].notna() & ~df["pitch_type"].isin(["PO", "IN", "EP", "KN", "FA", "CS", "SC"])]
-    df = add_target(df)
+    df = plain_dtypes(pd.concat(frames, ignore_index=True))
+    df = df[df["pitch_type"].notna()
+            & ~df["pitch_type"].isin(["PO", "IN", "EP", "KN", "FA", "CS", "SC"])].copy()
+    df = add_expected_target(add_target(df))
     return add_features(df)

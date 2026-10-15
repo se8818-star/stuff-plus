@@ -1,27 +1,97 @@
-# Stuff+ ablation: location-neutral 9-point VAA/HAA vs tjStuff+ v3.0
+# Stuff+ (v1.0.0)
 
-Tests whether approach angles computed on a fixed 3×3 zone grid improve on
-tjStuff+ v3.0's feature set, using his validation design on 2022–2026 data
-(the post-2023-rule-change era plus one prior season):
+A reproducible Stuff+ pipeline on 2022–2026 Statcast data, built around a
+pre-registered test of whether anything beats the tjStuff+ v3.0 feature set on
+next-season prediction. **Nothing did**, so v1.0.0 ships that feature set. See
+`MODEL_CARD.md` for the model, the validation tables and the limitations.
 
-| Fold | Train | Score | Validate against |
-|---|---|---|---|
-| 1 (default) | 2022–23 | 2024 | 2025 |
-| 2 | 2022–24 | 2025 | 2026 |
+| Split | Train | Score | Validate against | Role |
+|---|---|---|---|---|
+| Inner CV | 2022–23, by pitcher | 2022 | 2023 | development |
+| Fold 1 | 2022–23 | 2024 | 2025 | development |
+| Fold 2 | 2022–24 | 2025 | 2026 | one-shot confirmation |
 
 ## Run it
 
 ```bash
-pip install pandas numpy scikit-learn pyarrow pybaseball lightgbm
-python fetch_data.py          # 2022-2026 Statcast, cached to data/ (slow, once)
-python run_ablation.py        # all variants, ~a few minutes each with LightGBM
-python run_ablation.py --seeds 3   # average 3 model seeds (recommended for final numbers)
-python run_ablation.py --train 2022 2023 2024 --eval 2025   # fold 2
-python run_ablation.py --synthetic # smoke test, no data needed
+bash setup.sh                 # .venv + pinned requirements.txt + synthetic smoke test
+source .venv/bin/activate
+pytest -q
+python fetch_data.py          # 2022-2026 Statcast, cached to data/ (resumable, ~15 min)
+python data_quality.py        # reports/data_quality.md
+python baseline_checks.py     # sanity checks on the tjStuff+ v3.0 baseline
+python develop.py             # all candidates: inner CV + fold 1 -> reports/development_stage1.md
+python confirm.py --unlock-fold2 && python report_confirmation.py   # ran once; refuses to rerun
+python final.py               # models/, leaderboards/, park check
+python final.py --model S6    # six-variable comparison model (files suffixed _s6)
+python compare_models.py      # leaderboards/comparison_2026.csv, reports/comparison_a_vs_s6.md
+python overfit_check.py       # reports/overfit_check.md
+python run_ablation.py --synthetic   # smoke test, no data needed
 ```
 
-If LightGBM isn't installed it falls back to sklearn's histogram GBM with
-matched settings. Results land in `results/ablation_<eval year>.json`.
+`run_ablation.py` is the original feature-set ablation harness (variants A–J,
+grid variants); the pre-registered comparison lives in `models.py`,
+`develop.py` and `confirm.py`. `tune.py` implements the regularization search
+that was planned and then deliberately not run.
+
+Outputs: `leaderboards/pitchers_2026.csv`, `leaderboards/pitch_types_2026.csv`,
+`models/stuffplus_v1.0.0.json` (the `.joblib` beside it is not in git).
+
+If LightGBM isn't installed `run_ablation.py` falls back to sklearn's histogram
+GBM. Every run records its arguments, seeds and library versions under
+`results/`. Versions are pinned for Python 3.9; on Apple Silicon LightGBM needs
+`brew install libomp` (`setup.sh` does this). CI runs only `pytest` and the
+synthetic smoke test — it never downloads data.
+
+## Leaderboard website
+
+```bash
+pip install -r requirements.txt
+python serve.py               # http://127.0.0.1:8000
+```
+
+The first run builds the leaderboards (`webapp/build.py`) and caches them in
+`models/stuffplus_site_*.joblib`; run `python serve.py --rebuild` after new data or a
+new model.
+
+- **With `data/` and the frozen model** (`models/stuffplus_v1.0.0.joblib` from
+  `final.py`): 2026 shows the published `leaderboards/*_2026.csv` numbers exactly
+  (out-of-fold, shrunk). Run `python -m webapp.folds` once first: it refits and saves
+  `final.py`'s five out-of-fold models (same folds, pitches, settings and seeds; it
+  checks that they reproduce the published leaderboard), and the site then scores
+  2022–2025 out-of-fold with the same shrinkage, and grades with them too. Without that
+  file the site falls back to the full model, which is in-sample for every season it
+  was trained on and has memorised those pitchers' results (see `MODEL_CARD.md`).
+- **With `data/` only**, or with `--variant B_plus_center` / `--train 2022 2023 2024`,
+  it trains that feature-set variant instead.
+- **Without `data/`** it serves a synthetic demo, with a banner saying so.
+
+Displayed Stuff+ is stretched so each pitch type, and the pitcher board, has an SD of 10
+among qualified rows each season (min 100 pitches for pitchers, 50 for pitch types), keeping
+each group's own mean. Grades and percentiles are unchanged, and `stuff_plus_model` in the
+API keeps the model's / published number. `python serve.py --rebuild --spread none` shows
+the raw numbers instead; `--spread center` centres every pitch type at 100.
+
+- **Pitchers**: pitcher-season Stuff+, 20-80 grade, Stuff+ per pitch type, filters
+  for hand, SP/RP (same rule as `final.py`), min pitches, CSV export.
+- **Pitches**: one row per pitcher × pitch type with velo, spin, IVB/HB, extension.
+- **Explore**: scatter any two pitch characteristics, coloured by Stuff+.
+- **Grade a pitcher**: type in an arsenal (velo, spin, IVB, HB, release, extension,
+  usage) and get Stuff+, a 20-80 grade, and a percentile per pitch as you type. You can
+  start from any MLB pitcher's arsenal and tweak it.
+- **My pitchers**: name an arsenal in the grader and save it. Saved pitchers are listed
+  with their live Stuff+, grade, percentile and per-pitch scores, and open back in the
+  grader for editing. They're stored in `custom_pitchers.json` at the repo root
+  (gitignored), so they survive restarts and rebuilds.
+
+The grader builds Statcast-shaped rows from the inputs and runs them through
+`features.add_features`, so it uses exactly the same features as the model. An arsenal
+loaded from an MLB pitcher (and a saved pitcher started from one) is scored by the fold
+model that never saw him, like his leaderboard number; anything else by the average of
+the five fold models. Movement
+uses Savant conventions (inches, y = 50 ft to the plate, matching Statcast pfx, HB positive to the arm side).
+A pitch's grade is the model's grade for the *average* pitch you describe, which can
+differ slightly from a leaderboard number (the mean of every individual pitch's grade).
 
 ## How the 9-point angles work (`physics.py`)
 
@@ -34,7 +104,7 @@ matched settings. Results land in `results/ablation_<eval year>.json`.
 Re-aiming a pitch at its own actual location reproduces its real VAA/HAA
 exactly, so the physics is checked against Statcast's own fit.
 
-## Variants (`features.py`)
+## Ablation variants (`features.py`, used by `run_ablation.py`)
 
 | Name | Features |
 |---|---|
@@ -45,7 +115,13 @@ exactly, so the physics is checked against Statcast's own fit.
 | D_grid9_angles_only | Your proposal: velo, spin, extension, speed diff, VAA/HAA diffs + 9-point grid. No az/ax, no release, no arm angle |
 | D1_center_angles_only | D with one center point instead of 9 |
 | E_plus_arm_angle | A + arm angle |
-| F_plus_spin_axis | A + spin axis (in the v3.0 article, not in the notebook) |
+| F_plus_spin_axis | A + spin axis, mirrored for LHP (in the v3.0 article, not in the notebook) |
+| G_plus_same_side | A + batter handedness as same-side vs opposite-side |
+| H_plus_ssw | A + seam-shifted-wake proxy: observed spin axis minus the axis implied by pfx_x/pfx_z |
+| I_recency_weighted | A's features; each training season weighted 0.5 ** (seasons before the latest) |
+| J_expected_target | A's features; balls in play valued by xwOBA converted to runs for the count |
+| C1_center_no_accel | C with the grid collapsed to its centre point |
+| A50_tj_v3_y50 | Reference: A with release x/z from the fit at y=50 (TJ's MLB-API definition) |
 
 ## Reading the output
 
@@ -53,8 +129,11 @@ exactly, so the physics is checked against Statcast's own fit.
   (trained on 2020–22), so treat that as a rough reference, not an exact target.
 - **next_woba / next_rv100**: correlation with next-season results, sign-flipped so higher = better.
 - **next_k_bb**: correlation with next-season K−BB%.
-- **CI vs A**: paired bootstrap over pitchers. If the interval contains 0, the
-  variant isn't distinguishable from the baseline.
+- **CI vs A**: paired bootstrap over pitchers, per fold and for the mean of the
+  folds (a pitcher in both folds is resampled into both together). If the
+  interval contains 0, the variant isn't distinguishable from the baseline.
+- **pitch-type stickiness**: the same year-over-year correlation per pitcher ×
+  pitch type (FF, SI, FC, SL, ST, CU, KC, CH, FS).
 - **grid PCA**: cumulative variance of the 18 grid angles. Under the
   constant-acceleration fit, VAA depends only on the target's height and HAA
   only on its width, so expect ~2–3 components to explain essentially all of it.
@@ -62,8 +141,16 @@ exactly, so the physics is checked against Statcast's own fit.
 ## Notes on fidelity to tjStuff+ v3.0
 
 - Target: same count-specific run-value table (`run_values.csv`, from his repo).
-- Release x/z use Statcast `release_pos_*`; his notebook uses MLB API `x0/z0`.
+- Release x/z use Statcast `release_pos_*`; his notebook uses MLB API `x0/z0`
+  (the fit at y=50). `A50_tj_v3_y50` is that version; it tracks his published
+  2024 scores more closely (r = 0.94 vs 0.91) but validates slightly worse, so
+  the release-point version is the baseline to beat.
 - RobustScaler is omitted (no effect on tree models).
+- Outcomes his `event_dict` maps to None (`field_error`, `strikeout_double_play`,
+  `catcher_interf`, ...) have no target and are dropped, as in his notebook.
+- His notebook inner-joins the primary-fastball table, which drops pitcher-seasons
+  with no FF/SI/FC (the fallback code after it never runs). Here those rows are
+  kept, referenced to the pitcher's hardest pitch type, and flagged `fb_fallback`.
 - His notebook passes `subsample=0.8` without `subsample_freq`, so LightGBM
   doesn't actually bag rows; kept as-is for a faithful baseline.
 

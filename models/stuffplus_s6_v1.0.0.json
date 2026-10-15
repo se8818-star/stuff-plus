@@ -1,0 +1,82 @@
+{
+ "name": "stuffplus_s6",
+ "version": "1.0.0",
+ "model": "S6",
+ "status": "comparison model: not confirmed better than the shipped model (reports/confirmation.md)",
+ "features": [
+  "start_speed",
+  "extension",
+  "vaa_ln",
+  "haa_ln",
+  "vaa_diff",
+  "haa_diff"
+ ],
+ "target": "target",
+ "lightgbm_params": {
+  "n_estimators": 1000,
+  "learning_rate": 0.01,
+  "num_leaves": 31,
+  "max_depth": -1,
+  "min_child_samples": 20,
+  "subsample": 0.8,
+  "colsample_bytree": 0.8,
+  "reg_alpha": 0.1,
+  "reg_lambda": 0.2,
+  "force_row_wise": true,
+  "deterministic": true,
+  "verbose": -1
+ },
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "train_years": [
+  2022,
+  2023,
+  2024,
+  2025,
+  2026
+ ],
+ "n_train": 3537987,
+ "scaling": {
+  "model_xrv_mean": -0.0005981944959785624,
+  "model_xrv_sd": 0.005157881511683927,
+  "oof_xrv_mean": -0.0004143262287938993,
+  "oof_xrv_sd": 0.005154653920705996,
+  "season": 2026,
+  "formula": "stuff_plus = 100 - 10 * (xRV - model_xrv_mean) / model_xrv_sd"
+ },
+ "shrinkage": {
+  "pitcher_k": {
+   "k": 9.933732760505853,
+   "r_half": 0.9592586480631303,
+   "harmonic_half_size": 233.89059530544938,
+   "groups": 3572
+  },
+  "pitch_type_k": {
+   "k": 3.5653059652181094,
+   "r_half": 0.9555741547476846,
+   "harmonic_half_size": 76.68766266079336,
+   "groups": 12106
+  },
+  "formula": "league_mean + n / (n + k) * (raw_mean - league_mean)"
+ },
+ "feature_notes": {
+  "ax, x0, haa_ln": "mirrored so both hands share a frame (see features.add_features)",
+  "vaa_ln, haa_ln": "approach angles re-aimed at the centre of the zone (physics.py)",
+  "*_diff": "difference from the pitcher-season's primary fastball (FF/SI/FC by usage)"
+ },
+ "artifact": "models/stuffplus_s6_v1.0.0.joblib (list of 3 LGBMRegressor; average their predictions)",
+ "env": {
+  "python": "3.9.6",
+  "platform": "macOS-15.7.3-arm64-arm-64bit",
+  "numpy": "2.0.2",
+  "pandas": "2.3.3",
+  "scikit-learn": "1.6.1",
+  "lightgbm": "4.6.0",
+  "pyarrow": "21.0.0",
+  "pybaseball": "2.2.7",
+  "optuna": "5.0.0"
+ }
+}

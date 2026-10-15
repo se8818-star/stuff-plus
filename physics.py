@@ -90,6 +90,27 @@ def actual_angles(vx0, vy0, vz0, ax, ay, az):
     return -np.degrees(np.arctan(vz / vy)), -np.degrees(np.arctan(vx / vy))
 
 
+# Plane at which Statcast reports plate_x / plate_z. Through 2025 it is the front
+# of the plate; from 2026 the data are consistent only with the middle of the
+# plate (8.5 in), all season (see reports/data_quality.md). None of the Stuff
+# features use plate_x/plate_z, but anything location-based must use this.
+Y_PLATE_MID = 8.5 / 12.0
+
+
+def plate_plane(year):
+    return Y_PLATE_MID if year >= 2026 else Y_PLATE
+
+
+def fit_position_at(y, plate_x, plate_z, vx0, vy0, vz0, ax, ay, az, y_plate=Y_PLATE):
+    """(x, z) of the fitted trajectory at distance y, anchored on the measured
+    plate crossing (reported at y_plate). Statcast doesn't publish the fit's
+    x/z at y=50, so this is how the fit is compared against release_pos_x/z."""
+    t_p = _time_to_y(Y50, vy0, ay, y_plate)
+    vx_p, vy_p, vz_p = vx0 + ax * t_p, vy0 + ay * t_p, vz0 + az * t_p
+    t = _time_to_y(y_plate, vy_p, ay, y)                 # negative: back toward the mound
+    return plate_x + vx_p * t + 0.5 * ax * t ** 2, plate_z + vz_p * t + 0.5 * az * t ** 2
+
+
 def grid_angles(df, mirror_col="p_throws"):
     """Add 9 VAA + 9 HAA columns (vaa_<row>_<col>, haa_<row>_<col>) plus
     vaa_ln / haa_ln (center-of-zone, location-neutral) to a pandas DataFrame

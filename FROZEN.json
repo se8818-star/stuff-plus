@@ -1,0 +1,37 @@
+{
+ "test": [
+  "J",
+  "S6"
+ ],
+ "params": {
+  "A": null,
+  "J": null,
+  "S6": null
+ },
+ "settings": "TJ LightGBM settings (models.TJ_PARAMS), seeds 0-2",
+ "tuned": false,
+ "shrinkage_in_leaderboards": true,
+ "development_selection_score": {
+  "A": {
+   "raw": 0.23687398353773326,
+   "shrunk": 0.2369448674209419
+  },
+  "J": {
+   "raw": 0.2493106728747377,
+   "shrunk": 0.24952326917646214
+  },
+  "S6": {
+   "raw": 0.2526410348996925,
+   "shrunk": 0.2528239852626917
+  }
+ },
+ "fold2": {
+  "train": [
+   2022,
+   2023,
+   2024
+  ],
+  "score": 2025,
+  "validate": 2026
+ }
+}
