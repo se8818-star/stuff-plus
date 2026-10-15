@@ -213,7 +213,7 @@ function renderPitches() {
 // ------------------------------------------------------------- explore tab
 const AXES = { velo: "Velocity (mph)", spin: "Spin (rpm)", ivb: "IVB (in)", hb: "HB, arm side (in)",
   ext: "Extension (ft)", rel_height: "Release height (ft)", rel_side: "Release side (ft)",
-  usage: "Usage (%)", stuff_plus: "Stuff+" };
+  vaa: "VAA (°)", haa: "HAA, arm side (°)", usage: "Usage (%)", stuff_plus: "Stuff+" };
 const INCH_AXES = new Set(["ivb", "hb"]), INCH_LIM = 25;
 function niceTicks(lo, hi, n = 6) {
   const span = hi - lo || 1, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));

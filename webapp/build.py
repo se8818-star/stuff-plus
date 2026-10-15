@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from features import VARIANTS, load  # noqa: E402
+from physics import actual_angles  # noqa: E402
 from run_ablation import make_model  # noqa: E402
 from webapp.folds import fit_folds, folds_path, oof_predict  # noqa: E402
 from webapp.grading import AveragedModel, accel_to_movement, rescale  # noqa: E402
@@ -265,6 +266,15 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
               f"HB {(sc['hb'] - hb_sc).abs().median():.2f}")
     # features.py mirrors LHP spin axis; show and pre-fill the raw Savant value
     sc["spin_axis_raw"] = np.where(sc["p_throws"] == "L", (360 - sc["spin_axis"]) % 360, sc["spin_axis"])
+    # approach angles where the pitch actually crosses the plate, as Savant shows
+    # them (degrees; VAA closer to 0 = flatter); HAA mirrored so + = toward arm side
+    sc["vaa"] = sc["haa"] = np.nan
+    if {"vx0", "vy0", "vz0", "ay"} <= set(sc.columns):
+        lhp = (sc["p_throws"] == "L").to_numpy()
+        vaa, haa = actual_angles(sc["vx0"].to_numpy(), sc["vy0"].to_numpy(), sc["vz0"].to_numpy(),
+                                 np.where(lhp, -sc["ax"], sc["ax"]),  # features.py mirrored ax for LHP
+                                 sc["ay"].to_numpy(), sc["az"].to_numpy())
+        sc["vaa"], sc["haa"] = vaa, np.where(lhp, haa, -haa)
 
     arm_coef = None
     a = sc[["arm_angle", "z0", "x0"]].dropna()
@@ -278,7 +288,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
                  velo=("start_speed", "mean"), spin=("spin_rate", "mean"),
                  ext=("extension", "mean"), rel_side=("x0", "mean"),
                  rel_height=("z0", "mean"), ivb=("ivb", "mean"), hb=("hb", "mean"),
-                 spin_axis=("spin_axis_raw", "mean"), arm_angle=("arm_angle", "mean"))
+                 spin_axis=("spin_axis_raw", "mean"), arm_angle=("arm_angle", "mean"),
+                 vaa=("vaa", "mean"), haa=("haa", "mean"))
             .reset_index())
     tot = sc.groupby(keys).agg(n=("stuff", "size"), stuff_plus=("stuff", "mean"),
                                hand=("p_throws", lambda s: s.mode().iat[0]),

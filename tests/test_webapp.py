@@ -572,3 +572,15 @@ def test_model_menu_switches_leaderboards_and_my_pitchers(v110_paths, tmp_path):
     graded = {m["id"]: c.get(f"/api/custom?season=2026&model={m['id']}").json()[0]["result"]["overall"]["stuff_plus"]
               for m in ms}
     assert graded[nr_id] != graded[rem_id]
+
+
+def test_pitch_types_carry_approach_angles(bundle):
+    """Explore's VAA/HAA: Savant-style plate angles per pitcher-pitch type, HAA in
+    the arm-side frame (from an arm-side release a pitch angles glove-side, < 0)."""
+    pt = bundle["pitch_types"]
+    assert pt["vaa"].between(-15, 0).all() and pt["haa"].between(-10, 10).all()
+    by_type = pt.groupby("pitch_type")[["vaa", "haa"]].mean()
+    assert by_type.loc["FF", "vaa"] > by_type.loc["SL", "vaa"]      # fastballs arrive flatter
+    assert by_type.loc["CH", "haa"] > by_type.loc["SL", "haa"]      # changeups run arm side
+    for hand, g in pt.groupby("hand"):
+        assert g["haa"].mean() < 0, hand
