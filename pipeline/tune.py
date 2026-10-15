@@ -1,9 +1,9 @@
 """
-Stage 2 regularization search (PREREGISTRATION.md). Run only for A and the
+Stage 2 regularization search (docs/PREREGISTRATION.md). Run only for A and the
 stage 1 winner, with the same budget and search space:
 
-    python tune.py A
-    python tune.py JGH
+    python -m pipeline.tune A
+    python -m pipeline.tune JGH
 
 - Optuna TPE (seed 0), 30 trials
 - 3-fold GroupKFold by pitcher on the training years only, early stopping
@@ -15,7 +15,7 @@ stage 1 winner, with the same budget and search space:
   mean of each component's loss relative to its loss at TJ's settings.
 
 Writes results/tuned_<name>.json. Whether the tuned settings are adopted is
-decided afterwards by the selection score (develop.py --params ...).
+decided afterwards by the selection score (pipeline/develop.py --params ...).
 """
 import argparse
 import json
@@ -25,11 +25,11 @@ from pathlib import Path
 import numpy as np
 from sklearn.model_selection import GroupKFold
 
-import run_ablation as ra
-from develop import TRAIN_YEARS, load_dev
-from models import CANDIDATES, TJ_PARAMS, component_tasks
+from stuffplus import run_ablation as ra
+from pipeline.develop import TRAIN_YEARS, load_dev
+from stuffplus.models import CANDIDATES, TJ_PARAMS, component_tasks
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 N_TRIALS, N_FOLDS, PATIENCE, MAX_TREES = 30, 3, 50, 3000
 
 
@@ -107,7 +107,7 @@ def main():
         params["n_estimators_by_component"] = trees
     else:
         params["n_estimators"] = trees["direct"]
-    out = HERE / "results" / f"tuned_{args.name}.json"
+    out = ROOT / "results" / f"tuned_{args.name}.json"
     out.write_text(json.dumps({
         "name": args.name, "params": params, "relative_loss": best.value, "tj_loss": base,
         "trials": [{"number": t.number, "value": t.value, "params": t.params,

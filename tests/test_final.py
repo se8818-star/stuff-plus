@@ -2,9 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import final
-
-
+from pipeline import final
 def test_grades_are_20_to_80_centred_on_50():
     x = pd.Series(np.random.default_rng(0).normal(100, 5, 500))
     g = final.grade(x)

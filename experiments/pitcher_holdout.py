@@ -1,9 +1,9 @@
 """
-Exploratory analysis E1 (EXPLORATORY.md): out-of-pitcher comparison of A and S6
+Exploratory analysis E1 (docs/EXPLORATORY.md): out-of-pitcher comparison of A and S6
 on 2020-2026. 5-fold GroupKFold by pitcher over all seasons, so every pitch is
 scored by a model that never saw that pitcher.
 
-    python pitcher_holdout.py   # results/pitcher_holdout.json, reports/pitcher_holdout.md
+    python -m experiments.pitcher_holdout   # results/pitcher_holdout.json, reports/pitcher_holdout.md
 """
 import json
 import time
@@ -13,25 +13,25 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
-import run_ablation as ra
-from develop import KEY, MIN_PITCHES, N_BOOT, pitcher_table, stuff_plus, table
-from features import load
-from models import AMENDED, CANDIDATES, add_outcome_flags, fit_predict
-from overfit_check import r2
+from stuffplus import run_ablation as ra
+from pipeline.develop import KEY, MIN_PITCHES, N_BOOT, pitcher_table, stuff_plus, table
+from stuffplus.features import load
+from stuffplus.models import AMENDED, CANDIDATES, add_outcome_flags, fit_predict
+from experiments.overfit_check import r2
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026]
 MODELS = ("A", "S6")
 
 
 def main():
     t0 = time.time()
-    df = add_outcome_flags(load(HERE / "data", YEARS))
+    df = add_outcome_flags(load(ROOT / "data", YEARS))
     df = df[df["target"].notna()].reset_index(drop=True)
     print(f"loaded {len(df):,} pitches, {df['pitcher'].nunique():,} pitchers ({time.time() - t0:.0f}s)", flush=True)
     folds = list(GroupKFold(n_splits=5).split(df, groups=df["pitcher"]))
     specs = {**CANDIDATES, **AMENDED}
-    pdir = HERE / "results" / "preds"
+    pdir = ROOT / "results" / "preds"
     pdir.mkdir(parents=True, exist_ok=True)
     xrv = {}
     for name in MODELS:
@@ -82,12 +82,12 @@ def main():
     out = {"years": YEARS, "models": list(MODELS), "results": res, "s6_minus_a": vs,
            "n_pitches": int(len(df)), "n_pitchers": int(df["pitcher"].nunique()),
            "env": ra.env_info(), "seconds": time.time() - t0}
-    (HERE / "results" / "pitcher_holdout.json").write_text(json.dumps(out, indent=1, default=float))
+    (ROOT / "results" / "pitcher_holdout.json").write_text(json.dumps(out, indent=1, default=float))
 
     H = {"stickiness": "Stickiness", "next_woba": "Next wOBA", "next_k_bb": "Next K−BB%", "next_rv100": "Next RV/100"}
     ci = lambda d, k: f"{d['diff'][k]:+.3f} [{d['ci'][k][0]:+.3f}, {d['ci'][k][1]:+.3f}]"  # noqa: E731
     md = ["# E1: out-of-pitcher comparison of A and S6, 2020–2026", "",
-          "Exploratory (plan in `EXPLORATORY.md`, committed before this was run). 5-fold GroupKFold by pitcher "
+          "Exploratory (plan in `docs/EXPLORATORY.md`, committed before this was run). 5-fold GroupKFold by pitcher "
           f"over {len(df):,} pitches and {df['pitcher'].nunique():,} pitchers: every score comes from a model "
           "that never saw that pitcher. 3 seeds, TJ's settings, no tuning. Correlations are sign-flipped so "
           "higher is better; CIs are paired bootstraps over pitchers, resampled jointly across season pairs.", "",
@@ -116,7 +116,7 @@ def main():
                    f"{res['S6']['same_season'][y]['rv100']:.3f}", f"{res['A']['pitch_r2'][y]:.5f}",
                    f"{res['S6']['pitch_r2'][y]:.5f}"] for y in YEARS]), "",
            "Library versions: " + ", ".join(f"{k} {v}" for k, v in out["env"].items() if v), ""]
-    (HERE / "reports" / "pitcher_holdout.md").write_text("\n".join(md))
+    (ROOT / "reports" / "pitcher_holdout.md").write_text("\n".join(md))
     print("\n".join(md[4:22]))
     print(f"done ({time.time() - t0:.0f}s)")
 

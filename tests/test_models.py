@@ -2,10 +2,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import develop
-import models
-from features import add_expected_target, add_features
-from synthetic import make
+from pipeline import develop
+from stuffplus import models
+from stuffplus.features import add_expected_target, add_features
+from stuffplus.synthetic import make
 
 
 @pytest.fixture(scope="module")
@@ -112,7 +112,7 @@ def test_tuned_component_models_get_their_own_tree_counts():
 
 def test_tuning_search_space_is_regularizing_only(data):
     import optuna
-    import tune
+    from pipeline import tune
     assert (tune.N_TRIALS, tune.N_FOLDS, tune.PATIENCE, tune.MAX_TREES) == (30, 3, 50, 3000)
     trial = optuna.create_study(sampler=optuna.samplers.TPESampler(seed=0)).ask()
     assert set(tune.suggest(trial)) == {"min_child_samples", "num_leaves", "reg_lambda", "learning_rate"}
@@ -125,7 +125,7 @@ def test_tuning_search_space_is_regularizing_only(data):
 
 
 def test_confirmation_runs_end_to_end_and_applies_the_rule(data):
-    import confirm
+    from pipeline import confirm
     d = pd.concat([data, data[data["year"] == 2023].assign(year=2024, game_pk=lambda x: x["game_pk"] + 1000)],
                   ignore_index=True)
     d["woba_denom"] = 1
@@ -150,14 +150,14 @@ def test_confirmation_runs_end_to_end_and_applies_the_rule(data):
     ((-0.02, -0.03), (0.02, 0.004), 0.0, False),
 ])
 def test_confirmation_rule(woba, rv, stick, want):
-    import confirm
+    from pipeline import confirm
     vs = {"diff": {"next_woba": woba[0], "next_rv100": rv[0], "stickiness": stick},
           "ci": {"next_woba": (woba[1], 0.1), "next_rv100": (rv[1], 0.1), "stickiness": (-0.1, 0.1)}}
     assert confirm.verdict(vs)["confirmed"] is want
 
 
 def test_crossfit_never_scores_a_pitcher_with_a_model_that_saw_him(data, monkeypatch):
-    import crossfit_test
+    from experiments import crossfit_test
     tr = data[data["year"] == 2022]
     sc = data[data["year"] == 2023].copy()
     sc.loc[sc["pitcher"] == 0, "pitcher"] = 999          # one pitcher unknown to the training seasons

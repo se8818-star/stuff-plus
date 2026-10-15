@@ -7,7 +7,7 @@ find. Results on this data say nothing about real baseball.
 import numpy as np
 import pandas as pd
 
-from physics import Y50, Y_PLATE
+from stuffplus.physics import Y50, Y_PLATE
 
 RV = None
 

@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from physics import Y50, _time_to_y, grid_angles, VAA_GRID_COLS, HAA_GRID_COLS
+from stuffplus.physics import Y50, _time_to_y, grid_angles, VAA_GRID_COLS, HAA_GRID_COLS
 
 HERE = Path(__file__).parent
 FASTBALLS = ["FF", "SI", "FC"]
@@ -155,7 +155,7 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df["z0"] = df["release_pos_z"]
     # (raw ax is restored for the physics below via a mirrored copy)
 
-    # Location-neutral 3x3 approach angles (physics.py does its own mirroring
+    # Location-neutral 3x3 approach angles (stuffplus/physics.py does its own mirroring
     # from the *raw* Statcast columns, so pass the un-mirrored ax)
     raw = df[["p_throws", "vx0", "vy0", "vz0", "ay", "az", "release_extension",
               "release_pos_x", "release_pos_z"]].copy()

@@ -1,8 +1,8 @@
 """
 Score Statcast pitches with a saved model.
 
-    python score.py new_season.parquet scores.csv                    # Stuff+
-    python score.py any_season.parquet scores.csv --no-remembering   # Stuff+ (no remembering)
+    python -m pipeline.score new_season.parquet scores.csv                    # Stuff+
+    python -m pipeline.score any_season.parquet scores.csv --no-remembering   # Stuff+ (no remembering)
 
 Input: a parquet or CSV of Statcast pitches (pybaseball column names) covering
 whole pitcher-seasons, because the fastball-difference features are computed per
@@ -21,18 +21,18 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from develop import pitcher_table, shrink
-from features import EXCLUDED_PITCH_TYPES, add_features, plain_dtypes
-from final import VERSION
-from models import crossfit_xrv, predict_seed_models
+from pipeline.develop import pitcher_table, shrink
+from stuffplus.features import EXCLUDED_PITCH_TYPES, add_features, plain_dtypes
+from pipeline.final import VERSION
+from stuffplus.models import crossfit_xrv, predict_seed_models
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_bundle(no_remembering=False, version=VERSION):
     tag = f"stuffplus{'_no_remembering' if no_remembering else ''}_v{version}"
-    return (joblib.load(HERE / "models" / f"{tag}.joblib"),
-            json.loads((HERE / "models" / f"{tag}.json").read_text()))
+    return (joblib.load(ROOT / "models" / f"{tag}.joblib"),
+            json.loads((ROOT / "models" / f"{tag}.json").read_text()))
 
 
 def score_pitches(raw, bundle, meta):

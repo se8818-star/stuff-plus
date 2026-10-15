@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import features
-from features import DES, EVT, VARIANTS, add_features, add_target
-from synthetic import make
+from stuffplus import features
+from stuffplus.features import DES, EVT, VARIANTS, add_features, add_target
+from stuffplus.synthetic import make
 
 RV = pd.read_csv(features.HERE / "run_values.csv")
 # one Statcast spelling for each outcome in the run-value table

@@ -20,40 +20,56 @@ See `MODEL_CARD.md` for the models, the validation tables and the limitations.
 | Fold 1 | 2022–23 | 2024 | 2025 | development |
 | Fold 2 | 2022–24 | 2025 | 2026 | one-shot confirmation |
 
+## Layout
+
+| Folder | What's in it |
+|---|---|
+| `stuffplus/` | the model code: physics, features, candidate models, the ablation harness |
+| `pipeline/` | the pre-registered steps, from fetching data to the shipped models and scoring |
+| `experiments/` | exploratory analyses outside the pre-registered comparison |
+| `webapp/` | the local leaderboard website (`python serve.py`) |
+| `docs/` | pre-registration, frozen candidates, exploratory plans |
+| `models/`, `leaderboards/`, `reports/` | shipped outputs |
+
+Run every command from the repo root. Scripts in the three code folders run as
+modules (`python -m pipeline.final`), not by path. The documents in `docs/` were
+committed before the files moved, so they name scripts without their folder.
+
 ## Run it
 
 ```bash
 bash setup.sh                 # .venv + pinned requirements.txt + synthetic smoke test
 source .venv/bin/activate
 pytest -q
-python fetch_data.py          # 2022-2026 Statcast, cached to data/ (resumable, ~15 min)
-python data_quality.py        # reports/data_quality.md
-python baseline_checks.py     # sanity checks on the tjStuff+ v3.0 baseline
-python develop.py             # all candidates: inner CV + fold 1 -> reports/development_stage1.md
-python confirm.py --unlock-fold2 && python report_confirmation.py   # ran once; refuses to rerun
-python final.py               # both models, leaderboards/, park checks
-python score.py new_season.parquet scores.csv                   # Stuff+ on a later season
-python score.py any_season.parquet scores.csv --no-remembering  # Stuff+ (no remembering)
-python compare_models.py      # S6 comparison: leaderboards/comparison_2026.csv
-python overfit_check.py       # reports/overfit_check.md
-python holdout_check.py       # reports/holdout_2025_2026.md
-python fetch_data.py 2020 2021 && python pitcher_holdout.py   # reports/pitcher_holdout.md (exploratory)
-python crossfit_test.py       # reports/crossfit_test.md: what remembering is worth (exploratory)
-python run_ablation.py --synthetic   # smoke test, no data needed
+python -m pipeline.fetch_data           # 2022-2026 Statcast, cached to data/ (resumable, ~15 min)
+python -m pipeline.data_quality         # reports/data_quality.md
+python -m pipeline.baseline_checks      # sanity checks on the tjStuff+ v3.0 baseline
+python -m pipeline.develop              # all candidates: inner CV + fold 1 -> reports/development_stage1.md
+python -m pipeline.confirm --unlock-fold2 && python -m pipeline.report_confirmation   # ran once; refuses to rerun
+python -m pipeline.final                # both models, leaderboards/, park checks
+python -m pipeline.score new_season.parquet scores.csv                   # Stuff+ on a later season
+python -m pipeline.score any_season.parquet scores.csv --no-remembering  # Stuff+ (no remembering)
+python -m experiments.compare_models    # S6 comparison: leaderboards/comparison_2026.csv
+python -m experiments.overfit_check     # reports/overfit_check.md
+python -m experiments.holdout_check     # reports/holdout_2025_2026.md
+python -m pipeline.fetch_data 2020 2021 && python -m experiments.pitcher_holdout   # reports/pitcher_holdout.md (exploratory)
+python -m experiments.crossfit_test     # reports/crossfit_test.md: what remembering is worth (exploratory)
+python -m experiments.tjstats_comparison.fetch   # then .build and .analyze: reports/tjstats_comparison.md (exploratory)
+python -m stuffplus.run_ablation --synthetic   # smoke test, no data needed
 ```
 
-`run_ablation.py` is the original feature-set ablation harness (variants A–J,
-grid variants); the pre-registered comparison lives in `models.py`,
-`develop.py` and `confirm.py`. `tune.py` implements the regularization search
+`stuffplus/run_ablation.py` is the original feature-set ablation harness (variants A–J,
+grid variants); the pre-registered comparison lives in `stuffplus/models.py`,
+`pipeline/develop.py` and `pipeline/confirm.py`. `pipeline/tune.py` implements the regularization search
 that was planned and then deliberately not run.
 
 Outputs: `leaderboards/pitchers_2026.csv` and `pitch_types_2026.csv` (Stuff+),
 the same with `_no_remembering`, `both_models_2026.csv`, and
 `models/stuffplus_v1.1.0.json` / `stuffplus_no_remembering_v1.1.0.json` (the
-`.joblib` files beside them are not in git; `final.py` rebuilds them). The S6
-comparison model's files (v1.0.0) were built by an earlier `final.py --model S6`.
+`.joblib` files beside them are not in git; `pipeline/final.py` rebuilds them). The S6
+comparison model's files (v1.0.0) were built by an earlier `pipeline/final.py --model S6`.
 
-If LightGBM isn't installed `run_ablation.py` falls back to sklearn's histogram
+If LightGBM isn't installed `stuffplus/run_ablation.py` falls back to sklearn's histogram
 GBM. Every run records its arguments, seeds and library versions under
 `results/`. Versions are pinned for Python 3.9; on Apple Silicon LightGBM needs
 `brew install libomp` (`setup.sh` does this). CI runs only `pytest` and the
@@ -70,7 +86,7 @@ The first run builds the leaderboards (`webapp/build.py`) and caches them in
 `models/stuffplus_site_*.joblib`; run `python serve.py --rebuild` after new data or a
 new model.
 
-- **With `data/` and the shipped models** (`python final.py`): the site shows
+- **With `data/` and the shipped models** (`python -m pipeline.final`): the site shows
   **Stuff+ (no remembering)**. 2026 shows the published
   `leaderboards/*_2026_no_remembering.csv` numbers exactly, and every other season in
   `data/` is scored the same way (each pitcher by a fold model that never saw him, same
@@ -97,7 +113,7 @@ at 100. Grades and percentiles are the same either way, and `stuff_plus_model` i
 always keeps the model's / published number.
 
 - **Pitchers**: pitcher-season Stuff+, 20-80 grade, Stuff+ per pitch type, filters
-  for hand, SP/RP (same rule as `final.py`), min pitches, CSV export.
+  for hand, SP/RP (same rule as `pipeline/final.py`), min pitches, CSV export.
 - **Pitches**: one row per pitcher × pitch type with velo, spin, IVB/HB, extension.
 - **Explore**: scatter any two pitch characteristics, coloured by Stuff+.
 - **Grade a pitcher**: type in an arsenal (velo, spin, IVB, HB, release, extension,
@@ -117,7 +133,7 @@ uses Savant conventions (inches, y = 50 ft to the plate, matching Statcast pfx, 
 A pitch's grade is the model's grade for the *average* pitch you describe, which can
 differ slightly from a leaderboard number (the mean of every individual pitch's grade).
 
-## How the 9-point angles work (`physics.py`)
+## How the 9-point angles work (`stuffplus/physics.py`)
 
 1. Rewind Statcast's 9-parameter fit to the release plane (60.5 − extension).
 2. Hold release position, release y-velocity, and all three accelerations fixed.
@@ -128,7 +144,7 @@ differ slightly from a leaderboard number (the mean of every individual pitch's 
 Re-aiming a pitch at its own actual location reproduces its real VAA/HAA
 exactly, so the physics is checked against Statcast's own fit.
 
-## Ablation variants (`features.py`, used by `run_ablation.py`)
+## Ablation variants (`stuffplus/features.py`, used by `stuffplus/run_ablation.py`)
 
 | Name | Features |
 |---|---|

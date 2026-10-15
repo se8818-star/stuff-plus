@@ -1,11 +1,11 @@
 """
-Development runs for the pre-registered candidates (PREREGISTRATION.md):
+Development runs for the pre-registered candidates (docs/PREREGISTRATION.md):
 inner GroupKFold-by-pitcher CV on 2022-23 and fold 1 (train 2022-23, score
 2024, validate on 2025). Never loads 2026.
 
-    python develop.py                  # fit everything missing, then analyse
-    python develop.py --tag tuned --params results/tuned_A.json --only A
-    python develop.py --analyse-only
+    python -m pipeline.develop                  # fit everything missing, then analyse
+    python -m pipeline.develop --tag tuned --params results/tuned_A.json --only A
+    python -m pipeline.develop --analyse-only
 
 Pitch-level xRV is cached in results/preds/ so the analysis can be redone
 without refitting. Writes results/development_<tag>.json and
@@ -20,11 +20,11 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
-import run_ablation as ra
-from features import load
-from models import AMENDED, CANDIDATES, CONTROLS, add_outcome_flags, fit_predict
+from stuffplus import run_ablation as ra
+from stuffplus.features import load
+from stuffplus.models import AMENDED, CANDIDATES, CONTROLS, add_outcome_flags, fit_predict
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 TRAIN_YEARS, EVAL_YEAR = [2022, 2023], 2024
 KEY = ["game_pk", "at_bat_number", "pitch_number"]
 MIN_PITCHES = [100, 300, 500]
@@ -33,7 +33,7 @@ SCORE_KEYS = ["next_woba", "next_rv100"]
 
 
 def load_dev():
-    df = load(HERE / "data", TRAIN_YEARS + [EVAL_YEAR, EVAL_YEAR + 1])
+    df = load(ROOT / "data", TRAIN_YEARS + [EVAL_YEAR, EVAL_YEAR + 1])
     assert df["year"].max() <= EVAL_YEAR + 1, "development must not touch the locked season"
     df = add_outcome_flags(df)
     return df[df["target"].notna()].reset_index(drop=True)
@@ -126,7 +126,7 @@ def analyse(df, names, tag):
     out_next = {"inner": ra.outcomes(df[df["year"] == TRAIN_YEARS[0] + 1]),
                 "fold1": ra.outcomes(df[df["year"] == EVAL_YEAR + 1])}
     for name in names:
-        preds = pd.read_parquet(HERE / "results" / "preds" / f"{tag}_{name}.parquet")
+        preds = pd.read_parquet(ROOT / "results" / "preds" / f"{tag}_{name}.parquet")
         # shrinkage constants from training-year out-of-fold Stuff+ only
         oof = tr.merge(preds[preds["split"] == "inner"][KEY + ["xrv"]], on=KEY, how="left", validate="1:1")
         s_oof = stuff_plus(oof["xrv"].to_numpy(), oof["xrv"].to_numpy())
@@ -245,8 +245,8 @@ def write_report(R, tag):
                    f"{res[n]['fold1']['coverage']:.4f}", f"{R['fit_info'][n].get('seconds', 0):.0f}"]
                   for n in names]), "",
            "Library versions: " + ", ".join(f"{k} {v}" for k, v in R["env"].items() if v), ""]
-    (HERE / "reports").mkdir(exist_ok=True)
-    (HERE / "reports" / f"development_{tag}.md").write_text("\n".join(md))
+    (ROOT / "reports").mkdir(exist_ok=True)
+    (ROOT / "reports" / f"development_{tag}.md").write_text("\n".join(md))
 
 
 def main():
@@ -260,7 +260,7 @@ def main():
     specs = {**CANDIDATES, **AMENDED, **CONTROLS}
     names = args.only or list(specs)
     params = json.loads(Path(args.params).read_text())["params"] if args.params else None
-    pdir = HERE / "results" / "preds"
+    pdir = ROOT / "results" / "preds"
     pdir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     df = load_dev()
@@ -279,7 +279,7 @@ def main():
          "specs": {n: {k: (list(v) if isinstance(v, tuple) else v) for k, v in specs[n].items()} for n in names},
          "fit_info": {n: json.loads((pdir / f"{args.tag}_{n}.json").read_text()) for n in names},
          "results": res, "vs_A": vs, "shrinkage": ks}
-    (HERE / "results" / f"development_{args.tag}.json").write_text(json.dumps(R, indent=1, default=float))
+    (ROOT / "results" / f"development_{args.tag}.json").write_text(json.dumps(R, indent=1, default=float))
     write_report(R, args.tag)
     for n in sorted(names, key=lambda n: -res[n]["selection_score"]):
         print(f"{n:<12} selection score {res[n]['selection_score']:.4f}")
