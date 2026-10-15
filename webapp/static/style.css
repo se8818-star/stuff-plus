@@ -2,12 +2,14 @@
   --bg: #f6f7f9; --surface: #ffffff; --surface-2: #f0f2f5; --border: #dfe3e8;
   --text: #17202a; --muted: #5d6b7a; --accent: #c8102e; --accent-ink: #fff;
   --good: #c8102e; --bad: #1f5fbf; --row-hover: #f3f6fa; --shadow: 0 1px 3px rgba(16,24,40,.08);
+  --btn: #17202a; --btn-ink: #ffffff; --focus: #17202a; --rank-w: 3.4em;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f1217; --surface: #171b22; --surface-2: #1e232c; --border: #2b313c;
     --text: #e7ebf0; --muted: #94a0ae; --accent: #ff4d5e; --accent-ink: #111;
     --good: #ff5d6c; --bad: #5b9bff; --row-hover: #1d222b; --shadow: none;
+    --btn: #e7ebf0; --btn-ink: #0f1217; --focus: #e7ebf0;
   }
 }
 * { box-sizing: border-box; }
@@ -39,7 +41,7 @@ input[type=search], input[type=number], select { background: var(--surface); bor
   border-radius: 8px; padding: 6px 9px; }
 input[type=search] { min-width: 200px; }
 input[type=number] { width: 80px; }
-button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 7px 12px;
+button { background: var(--btn); color: var(--btn-ink); border: 0; border-radius: 8px; padding: 7px 12px;
   font-weight: 600; cursor: pointer; }
 button.ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
@@ -57,13 +59,32 @@ button.ghost { background: var(--surface); color: var(--text); border: 1px solid
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 th, td { padding: 7px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
 th { position: sticky; top: 0; background: var(--surface); font-size: 12px; color: var(--muted); font-weight: 600;
-  cursor: pointer; user-select: none; z-index: 1; }
+  user-select: none; z-index: 2; }
 th.sorted { color: var(--text); }
-th.sorted::after { content: " ▾"; } th.sorted.asc::after { content: " ▴"; }
+/* sort buttons look like plain header text */
+.th-btn { background: none; border: 0; border-radius: 4px; padding: 0; margin: 0; font: inherit; color: inherit;
+  text-align: inherit; cursor: pointer; white-space: nowrap; }
+th.sorted .th-btn::after { content: " ▾"; } th.sorted.asc .th-btn::after { content: " ▴"; }
 td.l, th.l { text-align: left; }
 tbody tr { cursor: pointer; } tbody tr:hover { background: var(--row-hover); }
 td.rank { color: var(--muted); width: 1%; }
 td.name { font-weight: 600; }
+.name-btn { background: none; border: 0; border-radius: 4px; padding: 0; margin: 0; font: inherit; font-weight: 600;
+  color: inherit; text-align: left; cursor: pointer; }
+td.name .sub { display: none; font-size: 11.5px; font-weight: 400; color: var(--muted); }
+/* rank and name stay put while the table scrolls sideways */
+table.pin td.rank, table.pin th.rank { position: sticky; left: 0; min-width: var(--rank-w); width: var(--rank-w); }
+table.pin td.name, table.pin th.name { position: sticky; left: var(--rank-w); box-shadow: inset -1px 0 0 var(--border); }
+table.pin td.rank, table.pin td.name { background: var(--surface); z-index: 1; }
+table.pin th.rank, table.pin th.name { z-index: 3; }
+table.pin tbody tr:hover td.rank, table.pin tbody tr:hover td.name { background: var(--row-hover); }
+.explain { margin: -4px 0 10px; }
+footer { padding: 0 24px 32px; }
+footer summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; width: max-content; }
+#method-body { max-width: 760px; margin-top: 8px; }
+#method-body p { margin: 0 0 6px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.drawer h2:focus, .drawer h2:focus-visible { outline: none; }  /* focused on open so screen readers start here */
 .stuff { font-weight: 700; border-radius: 6px; padding: 2px 7px; display: inline-block; min-width: 46px; text-align: center; }
 .grade { color: var(--muted); }
 table.inputs td, table.inputs th { padding: 4px 4px; cursor: default; }
@@ -86,6 +107,13 @@ table.inputs select { padding: 4px 6px; }
 .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; margin-top: 4px; max-height: 280px; overflow: auto; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
 .dropdown div { padding: 6px 10px; cursor: pointer; } .dropdown div:hover { background: var(--row-hover); }
+#scatter svg { display: block; margin: 0 auto; }
+#cube { display: block; width: min(100%, max(300px, calc(100vh - 250px))); aspect-ratio: 1 / 1; margin: 0 auto;
+  cursor: grab; touch-action: none; border-radius: 8px; }
+#cube:active { cursor: grabbing; }
+.cube-tools { margin: 8px 0 0; }
+.cube-tools button { min-width: 36px; }
+.type-key { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; font-size: 12.5px; }
 .explore { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 16px; align-items: start; }
 .legend-card p { margin: 0 0 10px; }
 .scale { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 12px; }
@@ -107,6 +135,18 @@ svg .ptlabel { fill: var(--text); font-weight: 700; font-size: 11px; }
   header, main { padding-left: 16px; padding-right: 16px; }
   .grader, .explore, .drawer .row { grid-template-columns: 1fr; }
   .season { margin-left: 0; }
+  footer { padding-left: 16px; padding-right: 16px; }
+}
+/* phones: Hand, Role and Pitches fold into a subline under the name */
+@media (max-width: 640px) {
+  table .nx { display: none; }
+  td.name .sub { display: block; }
+  td.name { white-space: normal; min-width: 9em; max-width: 11em; }
+  :root { --rank-w: 2.9em; }
+  th, td { padding: 7px 8px; }
+  nav { flex-wrap: wrap; }
+  input[type=search] { min-width: 0; flex: 1 1 160px; }
+  #g-load, #g-name { min-width: 0; }
 }
 table.inputs input[data-k=spin] { width: 66px; }
 table.inputs input::-webkit-inner-spin-button { display: none; }
@@ -117,4 +157,4 @@ table.inputs input { -moz-appearance: textfield; }
 .empty p { margin: 0; }
 .arsenal-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .arsenal-chips span { white-space: nowrap; font-size: 12.5px; }
-td .icon.danger:hover { color: var(--good); }
+td .icon.danger:hover { color: var(--text); }

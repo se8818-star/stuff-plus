@@ -1,9 +1,18 @@
-# Stuff+ (v1.0.0)
+# Stuff+ (v1.1.0)
 
 A reproducible Stuff+ pipeline on 2022–2026 Statcast data, built around a
 pre-registered test of whether anything beats the tjStuff+ v3.0 feature set on
-next-season prediction. **Nothing did**, so v1.0.0 ships that feature set. See
-`MODEL_CARD.md` for the model, the validation tables and the limitations.
+next-season prediction. **Nothing did**, so this release ships that feature set,
+as two models:
+
+- **Stuff+**: one model trained on every pitcher. More predictive, because it
+  remembers how each pitcher's pitches have fared; only used on seasons after
+  its training data.
+- **Stuff+ (no remembering)**: a pitcher is only scored by a model that never
+  saw him. A pure grade of the physical pitch, about 0.037 lower in next-season
+  correlation.
+
+See `MODEL_CARD.md` for the models, the validation tables and the limitations.
 
 | Split | Train | Score | Validate against | Role |
 |---|---|---|---|---|
@@ -22,10 +31,14 @@ python data_quality.py        # reports/data_quality.md
 python baseline_checks.py     # sanity checks on the tjStuff+ v3.0 baseline
 python develop.py             # all candidates: inner CV + fold 1 -> reports/development_stage1.md
 python confirm.py --unlock-fold2 && python report_confirmation.py   # ran once; refuses to rerun
-python final.py               # models/, leaderboards/, park check
-python final.py --model S6    # six-variable comparison model (files suffixed _s6)
-python compare_models.py      # leaderboards/comparison_2026.csv, reports/comparison_a_vs_s6.md
+python final.py               # both models, leaderboards/, park checks
+python score.py new_season.parquet scores.csv                   # Stuff+ on a later season
+python score.py any_season.parquet scores.csv --no-remembering  # Stuff+ (no remembering)
+python compare_models.py      # S6 comparison: leaderboards/comparison_2026.csv
 python overfit_check.py       # reports/overfit_check.md
+python holdout_check.py       # reports/holdout_2025_2026.md
+python fetch_data.py 2020 2021 && python pitcher_holdout.py   # reports/pitcher_holdout.md (exploratory)
+python crossfit_test.py       # reports/crossfit_test.md: what remembering is worth (exploratory)
 python run_ablation.py --synthetic   # smoke test, no data needed
 ```
 
@@ -34,8 +47,11 @@ grid variants); the pre-registered comparison lives in `models.py`,
 `develop.py` and `confirm.py`. `tune.py` implements the regularization search
 that was planned and then deliberately not run.
 
-Outputs: `leaderboards/pitchers_2026.csv`, `leaderboards/pitch_types_2026.csv`,
-`models/stuffplus_v1.0.0.json` (the `.joblib` beside it is not in git).
+Outputs: `leaderboards/pitchers_2026.csv` and `pitch_types_2026.csv` (Stuff+),
+the same with `_no_remembering`, `both_models_2026.csv`, and
+`models/stuffplus_v1.1.0.json` / `stuffplus_no_remembering_v1.1.0.json` (the
+`.joblib` files beside them are not in git; `final.py` rebuilds them). The S6
+comparison model's files (v1.0.0) were built by an earlier `final.py --model S6`.
 
 If LightGBM isn't installed `run_ablation.py` falls back to sklearn's histogram
 GBM. Every run records its arguments, seeds and library versions under
@@ -54,14 +70,13 @@ The first run builds the leaderboards (`webapp/build.py`) and caches them in
 `models/stuffplus_site_*.joblib`; run `python serve.py --rebuild` after new data or a
 new model.
 
-- **With `data/` and the frozen model** (`models/stuffplus_v1.0.0.joblib` from
-  `final.py`): 2026 shows the published `leaderboards/*_2026.csv` numbers exactly
-  (out-of-fold, shrunk). Run `python -m webapp.folds` once first: it refits and saves
-  `final.py`'s five out-of-fold models (same folds, pitches, settings and seeds; it
-  checks that they reproduce the published leaderboard), and the site then scores
-  2022–2025 out-of-fold with the same shrinkage, and grades with them too. Without that
-  file the site falls back to the full model, which is in-sample for every season it
-  was trained on and has memorised those pitchers' results (see `MODEL_CARD.md`).
+- **With `data/` and the shipped models** (`python final.py`): the site shows
+  **Stuff+ (no remembering)**. 2026 shows the published
+  `leaderboards/*_2026_no_remembering.csv` numbers exactly, and every other season in
+  `data/` is scored the same way (each pitcher by a fold model that never saw him, same
+  shrinkage); the grader uses those fold models too. They come straight from
+  `models/stuffplus_no_remembering_v1.1.0.joblib`, so `python -m webapp.folds` is only
+  needed for a v1.0.0 model. The remembering Stuff+ model is not shown on the site.
 - **With `data/` only**, or with `--variant B_plus_center` / `--train 2022 2023 2024`,
   it trains that feature-set variant instead.
 - **Without `data/`** it serves a synthetic demo, with a banner saying so.

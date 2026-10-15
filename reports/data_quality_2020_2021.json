@@ -1,0 +1,431 @@
+{
+  "env": {
+    "python": "3.9.6",
+    "platform": "macOS-15.7.3-arm64-arm-64bit",
+    "numpy": "2.0.2",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.6.1",
+    "lightgbm": "4.6.0",
+    "pyarrow": "21.0.0",
+    "pybaseball": "2.2.7",
+    "optuna": "5.0.0"
+  },
+  "seasons": {
+    "2020": {
+      "pitches": 264262,
+      "games": 898,
+      "first": "2020-07-23",
+      "last": "2020-09-27",
+      "pitchers": 735,
+      "pitches/game": 294.2783964365256,
+      "games <150 pitches": 0,
+      "non-R rows": 0,
+      "dup key (season file)": 0,
+      "dup key (raw chunks)": 0,
+      "null key rows": 0,
+      "LHP %": 26.93122734256155,
+      "target null % (modeled pitch types)": 0.21248774109186006,
+      "mean target x100": 0.20651980137820683,
+      "mean delta_run_exp x100": -0.0005139238389198363,
+      "r(target, delta_run_exp)": 0.961671307188548,
+      "excluded pitch types %": 0.18390839394237538
+    },
+    "2021": {
+      "pitches": 712320,
+      "games": 2429,
+      "first": "2021-04-01",
+      "last": "2021-10-03",
+      "pitchers": 909,
+      "pitches/game": 293.2564841498559,
+      "games <150 pitches": 0,
+      "non-R rows": 0,
+      "dup key (season file)": 0,
+      "dup key (raw chunks)": 0,
+      "null key rows": 0,
+      "LHP %": 29.627695417789756,
+      "target null % (modeled pitch types)": 0.1913177059948097,
+      "mean target x100": 0.06820458248966241,
+      "mean delta_run_exp x100": -0.0033327544359775005,
+      "r(target, delta_run_exp)": 0.9611216918663785,
+      "excluded pitch types %": 0.17407906558849956
+    }
+  },
+  "null_pct": {
+    "2020": {
+      "pitch_type": 0.2656454579167644,
+      "release_speed": 0.2656454579167644,
+      "release_spin_rate": 0.7420665854341525,
+      "spin_axis": 0.7420665854341525,
+      "release_extension": 0.46052780952236794,
+      "arm_angle": 24.91845214219222,
+      "release_pos_x": 0.2656454579167644,
+      "release_pos_y": 0.2656454579167644,
+      "release_pos_z": 0.2656454579167644,
+      "vx0": 0.2656454579167644,
+      "vy0": 0.2656454579167644,
+      "vz0": 0.2656454579167644,
+      "ax": 0.2656454579167644,
+      "ay": 0.2656454579167644,
+      "az": 0.2656454579167644,
+      "pfx_x": 0.2656454579167644,
+      "pfx_z": 0.2656454579167644,
+      "plate_x": 0.2656454579167644,
+      "plate_z": 0.2656454579167644,
+      "p_throws": 0.0,
+      "stand": 0.0,
+      "balls": 0.0,
+      "strikes": 0.0,
+      "description": 0.0,
+      "estimated_woba_using_speedangle": 75.0868456304728,
+      "delta_run_exp": 0.25807721125246913,
+      "events (in play only)": 0.0,
+      "xwOBA (in play only)": 0.9936786575105735
+    },
+    "2021": {
+      "pitch_type": 0.3978548966756513,
+      "release_speed": 0.3978548966756513,
+      "release_spin_rate": 0.7681940700808626,
+      "spin_axis": 0.7681940700808626,
+      "release_extension": 0.5264487870619946,
+      "arm_angle": 3.5270664869721475,
+      "release_pos_x": 0.42733602875112314,
+      "release_pos_y": 0.42733602875112314,
+      "release_pos_z": 0.42733602875112314,
+      "vx0": 0.3978548966756513,
+      "vy0": 0.3978548966756513,
+      "vz0": 0.3978548966756513,
+      "ax": 0.3978548966756513,
+      "ay": 0.3978548966756513,
+      "az": 0.3978548966756513,
+      "pfx_x": 0.3981356693620845,
+      "pfx_z": 0.39799528301886794,
+      "plate_x": 0.42733602875112314,
+      "plate_z": 0.42733602875112314,
+      "p_throws": 0.0,
+      "stand": 0.0,
+      "balls": 0.0,
+      "strikes": 0.0,
+      "description": 0.0,
+      "estimated_woba_using_speedangle": 74.74800651392633,
+      "delta_run_exp": 0.3468946540880503,
+      "events (in play only)": 0.0,
+      "xwOBA (in play only)": 0.9399623686394373
+    }
+  },
+  "pitch_mix_pct": {
+    "2020": {
+      "FF": 34.70305984212638,
+      "SI": 15.478199665483498,
+      "FC": 7.094852835443613,
+      "SL": 16.552133867147,
+      "ST": 1.3800697792342447,
+      "SV": 0.24369754259030812,
+      "CU": 8.037856369814806,
+      "KC": 2.624667943177604,
+      "CH": 11.563902490709978,
+      "FS": 1.872005812413438,
+      "KN": 0.029894574323966368,
+      "EP": 0.016271730328234858,
+      "CS": 0.024975213992174432,
+      "SC": 0.0,
+      "FA": 0.10671227796656348,
+      "PO": 0.006054597331436227,
+      "(null)": 0.2656454579167644
+    },
+    "2021": {
+      "FF": 35.387606693620846,
+      "SI": 15.17815026954178,
+      "FC": 7.190026954177897,
+      "SL": 16.565588499550763,
+      "ST": 2.345575022461815,
+      "SV": 0.4010837825696317,
+      "CU": 7.2741183737646,
+      "KC": 2.259798966756514,
+      "CH": 11.220940026954178,
+      "FS": 1.6051774483378256,
+      "KN": 0.012353998203054807,
+      "EP": 0.017969451931716084,
+      "CS": 0.02133872416891285,
+      "SC": 0.0001403863432165319,
+      "FA": 0.11750336927223719,
+      "PO": 0.004773135669362084,
+      "(null)": 0.3978548966756513
+    }
+  },
+  "physics": {
+    "2020": {
+      "n": 263045,
+      "plate_plane_estimated_in": 17.0,
+      "plate_plane_used_in": 17.0,
+      "release_pos_y - (60.5 - extension) [ft]": {
+        "median": 0.020000000000003126,
+        "p99": 0.05000000000000426,
+        "max": 0.05000000000000426
+      },
+      "fit x at 60.5 - extension - release_pos_x [ft]": {
+        "median": 0.002527138025807396,
+        "p99": 0.007126638436996053,
+        "max": 0.09501459371433185
+      },
+      "fit z at 60.5 - extension - release_pos_z [ft]": {
+        "median": 0.002500506299831784,
+        "p99": 0.006453992636396286,
+        "max": 0.048766729935936226
+      },
+      "fit x at release_pos_y - release_pos_x [ft]": {
+        "median": 0.002511833365304472,
+        "p99": 0.005051330334328744,
+        "max": 0.09501459371433185
+      },
+      "fit z at release_pos_y - release_pos_z [ft]": {
+        "median": 0.0024973876880194368,
+        "p99": 0.005250185264176323,
+        "max": 0.04930860759498401
+      },
+      "re-aimed VAA - actual VAA, release_pos_x/z (as used for features) [deg]": {
+        "median": 0.002800332999204791,
+        "p99": 0.007240469924725658,
+        "max": 0.0541259287354352
+      },
+      "re-aimed HAA - actual HAA, release_pos_x/z (as used for features) [deg]": {
+        "median": 0.0028679464940242205,
+        "p99": 0.008087352252349137,
+        "max": 0.10826123541398225
+      },
+      "re-aimed VAA - actual VAA, fit-consistent release point [deg]": {
+        "median": 8.881784197001252e-16,
+        "p99": 7.993605777301127e-15,
+        "max": 2.1316282072803006e-14
+      },
+      "re-aimed HAA - actual HAA, fit-consistent release point [deg]": {
+        "median": 5.551115123125783e-16,
+        "p99": 1.0436096431476471e-14,
+        "max": 2.220446049250313e-14
+      },
+      "grid_nonfinite_rows": 0,
+      "vaa_ln_range": [
+        -11.324810098241187,
+        -6.060553785617,
+        -3.2459585480389705
+      ],
+      "haa_ln_range": [
+        -5.785648717858394,
+        -1.5355307197171228,
+        1.2853211496284633
+      ],
+      "ff_vaa_ln_mean": -5.207957673207872,
+      "ff_haa_ln_mean_by_hand": {
+        "L": -1.4518681734177352,
+        "R": -1.2396601504029687
+      },
+      "fit speed at release - release_speed [mph]": {
+        "median": 0.04699020776639884,
+        "p99": 0.18076005907939982,
+        "max": 0.6331889652609561
+      },
+      "implausible_rows": {
+        "release_speed outside 40-106 mph": 2,
+        "extension outside 3-9 ft": 3,
+        "release_pos_z outside 0.5-8 ft": 0,
+        "|vaa_ln| > 15 deg": 14,
+        "ay <= 0": 0
+      }
+    },
+    "2021": {
+      "n": 708570,
+      "plate_plane_estimated_in": 17.0,
+      "plate_plane_used_in": 17.0,
+      "release_pos_y - (60.5 - extension) [ft]": {
+        "median": 0.02999999999999403,
+        "p99": 0.05000000000000426,
+        "max": 0.05000000000000426
+      },
+      "fit x at 60.5 - extension - release_pos_x [ft]": {
+        "median": 0.0025279040559347266,
+        "p99": 0.007094058227559452,
+        "max": 0.26185459517772003
+      },
+      "fit z at 60.5 - extension - release_pos_z [ft]": {
+        "median": 0.002507753985415917,
+        "p99": 0.006485595568206143,
+        "max": 0.28676586919282254
+      },
+      "fit x at release_pos_y - release_pos_x [ft]": {
+        "median": 0.0024985612381581424,
+        "p99": 0.0050549936156861685,
+        "max": 0.25894761231839425
+      },
+      "fit z at release_pos_y - release_pos_z [ft]": {
+        "median": 0.0025020939698232603,
+        "p99": 0.0052472252206038714,
+        "max": 0.28733517406857434
+      },
+      "re-aimed VAA - actual VAA, release_pos_x/z (as used for features) [deg]": {
+        "median": 0.002810554193021453,
+        "p99": 0.007280308673495879,
+        "max": 0.3227849336438462
+      },
+      "re-aimed HAA - actual HAA, release_pos_x/z (as used for features) [deg]": {
+        "median": 0.0028690417517452937,
+        "p99": 0.008059372159855062,
+        "max": 0.2994769232825214
+      },
+      "re-aimed VAA - actual VAA, fit-consistent release point [deg]": {
+        "median": 8.881784197001252e-16,
+        "p99": 7.993605777301127e-15,
+        "max": 3.197442310920451e-14
+      },
+      "re-aimed HAA - actual HAA, fit-consistent release point [deg]": {
+        "median": 5.551115123125783e-16,
+        "p99": 1.021405182655144e-14,
+        "max": 2.3092638912203256e-14
+      },
+      "grid_nonfinite_rows": 0,
+      "vaa_ln_range": [
+        -11.268949067122852,
+        -6.025497902114871,
+        -3.011104197246455
+      ],
+      "haa_ln_range": [
+        -5.676467669713368,
+        -1.4771601119065112,
+        1.1241032965996511
+      ],
+      "ff_vaa_ln_mean": -5.209066884574431,
+      "ff_haa_ln_mean_by_hand": {
+        "L": -1.3060075149350148,
+        "R": -1.2142517705235452
+      },
+      "fit speed at release - release_speed [mph]": {
+        "median": 0.046420769103661996,
+        "p99": 0.17868053032437003,
+        "max": 0.7053182974239327
+      },
+      "implausible_rows": {
+        "release_speed outside 40-106 mph": 19,
+        "extension outside 3-9 ft": 1,
+        "release_pos_z outside 0.5-8 ft": 0,
+        "|vaa_ln| > 15 deg": 102,
+        "ay <= 0": 0
+      }
+    }
+  },
+  "dtypes": {
+    "2020": {
+      "game_date": "datetime64[ns]",
+      "game_type": "object",
+      "game_pk": "Int64",
+      "at_bat_number": "Int64",
+      "pitch_number": "Int64",
+      "inning": "Int64",
+      "inning_topbot": "object",
+      "outs_when_up": "Int64",
+      "n_thruorder_pitcher": "Int64",
+      "pitcher": "Int64",
+      "player_name": "object",
+      "p_throws": "object",
+      "batter": "Int64",
+      "stand": "object",
+      "pitch_type": "object",
+      "pitch_name": "object",
+      "balls": "Int64",
+      "strikes": "Int64",
+      "description": "object",
+      "events": "object",
+      "type": "object",
+      "bb_type": "object",
+      "zone": "Int64",
+      "release_speed": "Float64",
+      "effective_speed": "Float64",
+      "release_spin_rate": "Int64",
+      "spin_axis": "Int64",
+      "release_extension": "Float64",
+      "release_pos_x": "Float64",
+      "release_pos_y": "Float64",
+      "release_pos_z": "Float64",
+      "arm_angle": "Float64",
+      "vx0": "Float64",
+      "vy0": "Float64",
+      "vz0": "Float64",
+      "ax": "Float64",
+      "ay": "Float64",
+      "az": "Float64",
+      "pfx_x": "Float64",
+      "pfx_z": "Float64",
+      "api_break_z_with_gravity": "Float64",
+      "api_break_x_arm": "Float64",
+      "plate_x": "Float64",
+      "plate_z": "Float64",
+      "sz_top": "Float64",
+      "sz_bot": "Float64",
+      "delta_run_exp": "Float64",
+      "delta_pitcher_run_exp": "Float64",
+      "woba_value": "Float64",
+      "woba_denom": "Int64",
+      "estimated_woba_using_speedangle": "Float64",
+      "launch_speed": "Float64",
+      "launch_angle": "Int64",
+      "hit_distance_sc": "Int64",
+      "home_team": "object",
+      "away_team": "object"
+    },
+    "2021": {
+      "game_date": "datetime64[ns]",
+      "game_type": "object",
+      "game_pk": "Int64",
+      "at_bat_number": "Int64",
+      "pitch_number": "Int64",
+      "inning": "Int64",
+      "inning_topbot": "object",
+      "outs_when_up": "Int64",
+      "n_thruorder_pitcher": "Int64",
+      "pitcher": "Int64",
+      "player_name": "object",
+      "p_throws": "object",
+      "batter": "Int64",
+      "stand": "object",
+      "pitch_type": "object",
+      "pitch_name": "object",
+      "balls": "Int64",
+      "strikes": "Int64",
+      "description": "object",
+      "events": "object",
+      "type": "object",
+      "bb_type": "object",
+      "zone": "Int64",
+      "release_speed": "Float64",
+      "effective_speed": "Float64",
+      "release_spin_rate": "Int64",
+      "spin_axis": "Int64",
+      "release_extension": "Float64",
+      "release_pos_x": "Float64",
+      "release_pos_y": "Float64",
+      "release_pos_z": "Float64",
+      "arm_angle": "Float64",
+      "vx0": "Float64",
+      "vy0": "Float64",
+      "vz0": "Float64",
+      "ax": "Float64",
+      "ay": "Float64",
+      "az": "Float64",
+      "pfx_x": "Float64",
+      "pfx_z": "Float64",
+      "api_break_z_with_gravity": "Float64",
+      "api_break_x_arm": "Float64",
+      "plate_x": "Float64",
+      "plate_z": "Float64",
+      "sz_top": "Float64",
+      "sz_bot": "Float64",
+      "delta_run_exp": "Float64",
+      "delta_pitcher_run_exp": "Float64",
+      "woba_value": "Float64",
+      "woba_denom": "Int64",
+      "estimated_woba_using_speedangle": "Float64",
+      "launch_speed": "Float64",
+      "launch_angle": "Int64",
+      "hit_distance_sc": "Int64",
+      "home_team": "object",
+      "away_team": "object"
+    }
+  }
+}

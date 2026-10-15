@@ -154,3 +154,44 @@ def test_confirmation_rule(woba, rv, stick, want):
     vs = {"diff": {"next_woba": woba[0], "next_rv100": rv[0], "stickiness": stick},
           "ci": {"next_woba": (woba[1], 0.1), "next_rv100": (rv[1], 0.1), "stickiness": (-0.1, 0.1)}}
     assert confirm.verdict(vs)["confirmed"] is want
+
+
+def test_crossfit_never_scores_a_pitcher_with_a_model_that_saw_him(data, monkeypatch):
+    import crossfit_test
+    tr = data[data["year"] == 2022]
+    sc = data[data["year"] == 2023].copy()
+    sc.loc[sc["pitcher"] == 0, "pitcher"] = 999          # one pitcher unknown to the training seasons
+    calls = []
+
+    def fake(spec, train, frames, params=None):
+        k = len(calls)
+        calls.append(set(train["pitcher"]))
+        return [np.full(len(f), float(k)) for f in frames], {}
+
+    monkeypatch.setattr(crossfit_test, "fit_predict", fake)
+    (x,), fold_of = crossfit_test.crossfit_predict(models.CANDIDATES["A"], tr, [sc], n_folds=4)
+    assert len(calls) == 4 and set(fold_of) == set(tr["pitcher"])
+    for pitcher, k in fold_of.items():
+        assert pitcher not in calls[k]                    # the model used for him never trained on him
+        rows = (sc["pitcher"] == pitcher).to_numpy()
+        assert (x[rows] == k).all()
+    assert (x[(sc["pitcher"] == 999).to_numpy()] == np.mean(range(4))).all()   # unknown: mean of all folds
+
+
+def test_saved_bundle_scoring_has_no_memory_of_known_pitchers(data):
+    spec = models.CANDIDATES["A"]
+    feats = spec["features"]
+    small = {"n_estimators": 15, "learning_rate": 0.1}
+    pitchers = sorted(data["pitcher"].unique())
+    fold_of = {p: i % 3 for i, p in enumerate(pitchers)}
+    fold_models = [models.fit_seed_models(spec, data[data["pitcher"].map(fold_of) != k], small) for k in range(3)]
+    x = models.crossfit_xrv(fold_models, fold_of, data, feats)
+    per_fold = np.vstack([models.predict_seed_models(m, data, feats) for m in fold_models])
+    k = data["pitcher"].map(fold_of).to_numpy()
+    np.testing.assert_allclose(x, per_fold[k, np.arange(len(data))])
+    # a pitcher the bundle has never seen gets the mean of every fold model
+    new = data.assign(pitcher=10_000)
+    np.testing.assert_allclose(models.crossfit_xrv(fold_models, fold_of, new, feats), per_fold.mean(axis=0))
+    # missing feature -> NaN, not a crash
+    holes = data.copy(); holes.loc[holes.index[:3], feats[0]] = np.nan
+    assert np.isnan(models.crossfit_xrv(fold_models, fold_of, holes, feats)[:3]).all()

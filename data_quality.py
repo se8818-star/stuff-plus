@@ -136,6 +136,7 @@ def physics_check(df, year=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--years", nargs="*", type=int, default=[2022, 2023, 2024, 2025, 2026])
+    ap.add_argument("--name", default="data_quality", help="report file stem under reports/")
     args = ap.parse_args()
     data_dir = HERE / "data"
 
@@ -214,12 +215,12 @@ def main():
           "Absolute differences between `physics.py` and Statcast's own columns.", "",
           md_table(phys_df, "{:.4f}"), "", md_table(sane_df), "",
           "Rows failing plausibility bounds:", "", md_table(impl_df), ""]
-    (out / "data_quality.md").write_text("\n".join(md))
-    with open(out / "data_quality.json", "w") as f:
+    (out / f"{args.name}.md").write_text("\n".join(md))
+    with open(out / f"{args.name}.json", "w") as f:
         json.dump({"env": env_info(), "seasons": seasons, "null_pct": nulls_df.to_dict(),
                    "pitch_mix_pct": mix_df.to_dict(), "physics": phys, "dtypes": dtypes},
                   f, indent=2, default=float)
-    print(f"wrote {out/'data_quality.md'}")
+    print(f"wrote {out / (args.name + '.md')}")
 
 
 if __name__ == "__main__":

@@ -11,9 +11,10 @@ scores every season, and writes a single joblib bundle under models/
 (gitignored) with the model, scaling constants, leaderboards, and 20-80 grade
 constants. The existing ablation code is imported, not changed.
 
-With the frozen model's fold models (python -m webapp.folds), and always for
-the synthetic demo, every season is scored out-of-fold like the published
-leaderboard: each pitcher by a model that never saw his pitches. Otherwise
+With the frozen model's fold models, and always for the synthetic demo, every
+season is scored out-of-fold like the published leaderboard: each pitcher by a
+model that never saw his pitches. A v1.1.0+ no-remembering bundle carries its
+fold models; a v1.0.0 model needs `python -m webapp.folds` once. Otherwise
 seasons inside the training window are in-sample.
 """
 from __future__ import annotations
@@ -81,10 +82,15 @@ def infer_roles(df):
 
 
 def frozen_meta():
-    """The shipped model's metadata (models/stuffplus_v<version>.json), if any."""
-    metas = sorted(MODELS.glob("stuffplus_v*.json"))
-    metas = [m for m in metas if (MODELS / f"{m.stem}.joblib").exists()]
-    return metas[-1] if metas else None
+    """The shipped model's metadata, if any. Since v1.1.0 the website shows
+    Stuff+ (no remembering), models/stuffplus_no_remembering_v<version>.json,
+    whose bundle already holds final.py's fold models. Before that it was
+    models/stuffplus_v<version>.json plus webapp.folds."""
+    for pattern in ("stuffplus_no_remembering_v*.json", "stuffplus_v*.json"):
+        metas = [m for m in sorted(MODELS.glob(pattern)) if (MODELS / f"{m.stem}.joblib").exists()]
+        if metas:
+            return metas[-1]
+    return None
 
 
 def roles_by_season(df):
@@ -109,6 +115,18 @@ def shrink(raw, n, k, groups):
     g = w.groupby([pd.Series(x).to_numpy() for x in groups])
     mu = g["r"].transform("sum") / g["n"].transform("sum")
     return mu + n / (n + k) * (raw - mu)
+
+
+def prefer_published(own, published, on):
+    """Left-join the published leaderboard onto the site's own rows: published
+    values where a row was published, the site's own value otherwise. Columns
+    only the published table has (rank, grade) are NaN for unpublished rows."""
+    out = own.merge(published, on=on, how="left", suffixes=("", "_pub"))
+    for c in [c[:-4] for c in out.columns if c.endswith("_pub")]:
+        out[c] = out[f"{c}_pub"].where(out[f"{c}_pub"].notna(), out[c])
+        out = out.drop(columns=f"{c}_pub")
+    out["n"] = out["n"].astype(int)
+    return out
 
 
 def flip_name(s):
@@ -150,16 +168,25 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         k_pitcher = meta["shrinkage"]["pitcher_k"]["k"]
         k_type = meta["shrinkage"]["pitch_type_k"]["k"]
         fp = folds_path(frozen)
-        label = f"stuffplus v{meta['version']} (frozen model {meta['model']}{', out-of-fold' if fp.exists() else ''})"
-        if fp.exists():
+        art = joblib.load(Path(frozen).with_suffix(".joblib"))
+        own_folds = isinstance(art, dict) and "fold_models" in art      # final.py >= 1.1.0
+        suffix = "_no_remembering" if own_folds else ""
+        oof = own_folds or fp.exists()
+        label = (f"{meta.get('name', 'stuffplus')} v{meta['version']} (frozen model "
+                 f"{meta.get('model', meta.get('feature_set'))}{', out-of-fold' if oof else ''})")
+        if own_folds:
+            models, pitcher_fold = art["fold_models"], art["pitcher_fold"]
+            print(f"using {label}: fold models from {Path(frozen).with_suffix('.joblib').name}")
+        elif fp.exists():
             fb = joblib.load(fp)
             models, pitcher_fold = fb["models"], fb["pitcher_fold"]
             print(f"using {label}: {fp.name}; check against the published leaderboard: {fb['check']}")
         else:
-            model = AveragedModel(joblib.load(Path(frozen).with_suffix(".joblib")), feats)
+            model = AveragedModel(art, feats)
             print(f"using {label}: {Path(frozen).name}. No {fp.name}, so the grader and the seasons "
                   "before the published one use this full model (in-sample); "
-                  "run `python -m webapp.folds` to score them out-of-fold.")
+                  "for a v1.0.0 model, run `python -m webapp.folds` to score them out-of-fold "
+                  "(v1.1.0+ models carry their fold models and never reach this path).")
     elif synthetic and not train:
         feats, train = VARIANTS[variant], seasons
         label = f"{variant} · out-of-fold"
@@ -188,7 +215,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
              for y, g in sc.groupby("year")}
     if meta:  # the frozen model's own published scaling for its season
         s, oof = meta["scaling"], "oof" if folds else "model"
-        scale[int(s["season"])] = {"mu": s[f"{oof}_xrv_mean"], "sd": s[f"{oof}_xrv_sd"]}
+        scale[int(s["season"])] = ({"mu": s["xrv_mean"], "sd": s["xrv_sd"]} if "xrv_mean" in s else
+                                   {"mu": s[f"{oof}_xrv_mean"], "sd": s[f"{oof}_xrv_sd"]})
     sc["stuff"] = 100 - 10 * (sc["pred"] - sc["year"].map(lambda y: scale[y]["mu"])) \
         / sc["year"].map(lambda y: scale[y]["sd"])
 
@@ -233,7 +261,10 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     fb = pt[pt["pitch_type"].isin(["FF", "SI", "FC"])].sort_values("n", ascending=False) \
         .drop_duplicates(keys)[keys + ["velo"]].rename(columns={"velo": "fb_velo"})
     tot = tot.merge(fb, on=keys, how="left")
-    roles = roles_by_season(sc)
+    # Roles from every pitch final.py counts (those with a run value), before
+    # rows with missing features are dropped: a starter whose first pitch of a
+    # game has no spin reading still started it. Matches final.roles.
+    roles = roles_by_season(df[df["target"].notna()] if "target" in df else df)
     if roles is not None:
         tot = tot.merge(roles.reset_index(), on=keys, how="left")
 
@@ -241,23 +272,25 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     # the website's own numbers for that season, so the two always agree.
     if meta:
         y = int(meta["scaling"]["season"])
-        fp, ft = ROOT / "leaderboards" / f"pitchers_{y}.csv", ROOT / "leaderboards" / f"pitch_types_{y}.csv"
+        fp = ROOT / "leaderboards" / f"pitchers_{y}{suffix}.csv"
+        ft = ROOT / "leaderboards" / f"pitch_types_{y}{suffix}.csv"
         if fp.exists() and ft.exists():
             op = pd.read_csv(fp).assign(year=y)
             ot = pd.read_csv(ft).assign(year=y)
-            cur = tot[tot["year"] == y].drop(columns=["stuff_plus", "stuff_plus_raw", "role", "games", "gs"],
-                                             errors="ignore")
-            cur = cur.drop(columns="n").merge(
-                op[keys + ["rank", "pitches", "stuff_plus", "stuff_plus_raw", "grade", "role", "g", "gs"]]
-                .rename(columns={"g": "games", "pitches": "n"}), on=keys, how="inner")
-            cur = cur.sort_values("rank").drop(columns="rank")  # published order breaks ties
+            # Published rows only cover qualified pitchers (and pitch types). Keep
+            # everyone, as in every other season: published values where they
+            # exist, the site's own out-of-fold, shrunk scores for the rest.
+            pub = (op[keys + ["rank", "pitches", "stuff_plus", "stuff_plus_raw", "grade", "role", "g", "gs"]]
+                   .rename(columns={"g": "games", "pitches": "n"}))
+            cur = prefer_published(tot[tot["year"] == y], pub, keys)
+            cur = cur.sort_values(["rank", "stuff_plus"], ascending=[True, False], na_position="last") \
+                     .drop(columns="rank")                       # published order breaks ties
             tot = pd.concat([tot[tot["year"] != y], cur], ignore_index=True)
-            curt = pt[pt["year"] == y].drop(columns=["stuff_plus", "stuff_plus_raw"], errors="ignore")
-            curt = curt.merge(ot[keys + ["pitch_type", "rank_in_type", "pitches", "stuff_plus",
-                                         "stuff_plus_raw", "grade"]],
-                              on=keys + ["pitch_type"], how="left")
-            curt["n"] = curt["pitches"].fillna(curt["n"]).astype(int)
-            curt = curt.sort_values(["pitch_type", "rank_in_type"]).drop(columns=["pitches", "rank_in_type"])
+            pubt = (ot[keys + ["pitch_type", "rank_in_type", "pitches", "stuff_plus", "stuff_plus_raw", "grade"]]
+                    .rename(columns={"pitches": "n"}))
+            curt = prefer_published(pt[pt["year"] == y], pubt, keys + ["pitch_type"])
+            curt = curt.sort_values(["pitch_type", "rank_in_type", "stuff_plus"], ascending=[True, True, False],
+                                    na_position="last").drop(columns="rank_in_type")
             pt = pd.concat([pt[pt["year"] != y], curt], ignore_index=True)
             official = {y: f"{fp.relative_to(ROOT)}, {ft.relative_to(ROOT)}"}
             print(f"  {y}: using the published leaderboards ({official[y]})")
@@ -301,7 +334,8 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     notes = {}
     for y in scale:
         if y in official:
-            notes[y] = "Published leaderboard: out-of-fold scores, shrunk (" + official[y] + ")"
+            notes[y] = ("Published leaderboard: out-of-fold scores, shrunk (" + official[y] + "); rows below "
+                        "the published minimum pitches use the site's own out-of-fold, shrunk scores")
         elif folds:
             notes[y] = ("Out-of-fold: each pitcher is scored by a model that never saw his pitches"
                         + (", scores shrunk" if meta else ""))

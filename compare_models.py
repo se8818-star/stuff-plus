@@ -1,6 +1,7 @@
 """
-Side-by-side 2026 comparison of the shipped model (A) and the six-variable
-comparison model (S6), from their leaderboards.
+Side-by-side 2026 comparison of feature set A and the six-variable comparison
+model (S6), both scored without remembering the pitcher (out-of-fold), from
+their leaderboards.
 
     python compare_models.py    # leaderboards/comparison_2026.csv, reports/comparison_a_vs_s6.md
 """
@@ -16,7 +17,7 @@ HERE = Path(__file__).parent
 
 def main():
     lb = HERE / "leaderboards"
-    a, s = pd.read_csv(lb / "pitchers_2026.csv"), pd.read_csv(lb / "pitchers_2026_s6.csv")
+    a, s = pd.read_csv(lb / "pitchers_2026_no_remembering.csv"), pd.read_csv(lb / "pitchers_2026_s6.csv")
     keep = ["pitcher", "rank", "stuff_plus", "grade"]
     c = a[["pitcher", "player_name", "p_throws", "role", "pitches", "velo", "rank", "stuff_plus", "grade"]].merge(
         s[keep], on="pitcher", suffixes=("_a", "_s6"))
@@ -25,20 +26,23 @@ def main():
     c = c.sort_values("rank_a")
     c.to_csv(lb / "comparison_2026.csv", index=False)
 
-    ta, ts = pd.read_csv(lb / "pitch_types_2026.csv"), pd.read_csv(lb / "pitch_types_2026_s6.csv")
+    ta, ts = pd.read_csv(lb / "pitch_types_2026_no_remembering.csv"), pd.read_csv(lb / "pitch_types_2026_s6.csv")
     t = ta.merge(ts[["pitcher", "pitch_type", "stuff_plus"]], on=["pitcher", "pitch_type"], suffixes=("_a", "_s6"))
     by_type = t.groupby("pitch_type").apply(lambda g: pd.Series({
         "pairs": len(g), "r": g["stuff_plus_a"].corr(g["stuff_plus_s6"]),
         "mean_a": g["stuff_plus_a"].mean(), "mean_s6": g["stuff_plus_s6"].mean()}))
     sa = json.loads((HERE / "results" / "final_summary.json").read_text())
+    sa = {"shrinkage": sa["shrinkage"], "sp_rp": sa["models"]["Stuff+ (no remembering)"]["sp_rp"],
+          "parks_2026": sa["models"]["Stuff+ (no remembering)"]["parks"]}
     ss = json.loads((HERE / "results" / "final_summary_s6.json").read_text())
     big = c[c["pitches"] >= 500]
     top = lambda n, col: set(big.nsmallest(n, col)["pitcher"])  # noqa: E731
     f = lambda d: [d["player_name"], d["role"], f"{d['pitches']:,}", f"{d['stuff_plus_a']:.1f}",  # noqa: E731
                    f"{d['stuff_plus_s6']:.1f}", f"{d['stuff_plus_diff']:+.1f}"]
     head = ["Pitcher", "Role", "Pitches", "A", "S6", "S6 − A"]
-    md = ["# Shipped model (A) against the six-variable model (S6), 2026", "",
-          "Both trained on 2022–2026 with the same settings; scores are out-of-fold by pitcher and shrunk. "
+    md = ["# Stuff+ (no remembering) against the six-variable model (S6), 2026", "",
+          "Both trained on 2022–2026 with the same settings; both are scored without remembering the pitcher "
+          "(out-of-fold) and shrunk. A below is Stuff+ (no remembering). "
           "A uses ten inputs (velocity, spin, extension, vertical and horizontal acceleration, release x/z, and "
           "three fastball differences). S6 uses six (velocity, extension, location-neutral VAA and HAA, and their "
           "differences from the fastball). S6 was not confirmed as better or worse than A "

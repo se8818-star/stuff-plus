@@ -220,3 +220,293 @@ def test_custom_pitchers(bundle_file, tmp_path):
     assert c.delete(f"/api/custom/{made['id']}").status_code == 200
     assert c.get("/api/custom").json() == []
     assert c.delete(f"/api/custom/{made['id']}").status_code == 404
+
+
+@pytest.mark.parametrize("kind", ["scaling", "bundle"])
+def test_folds_step_exits_early_for_v110_models(tmp_path, monkeypatch, kind):
+    """webapp.folds is only for v1.0.0: a v1.1.0+ model already ships its fold
+    models, so the step stops before loading any data or fitting anything."""
+    import json
+
+    import features
+    from webapp import folds
+
+    meta = {"version": "1.1.0", "features": ["start_speed"], "target": "target", "train_years": [2022],
+            "seeds": [0], "lightgbm_params": {},
+            "scaling": {"xrv_mean": 0.0, "xrv_sd": 1.0, "season": 2026} if kind == "scaling" else
+                       {"oof_xrv_mean": 0.0, "oof_xrv_sd": 1.0, "season": 2026}}
+    path = tmp_path / "stuffplus_no_remembering_v1.1.0.json"
+    path.write_text(json.dumps(meta))
+    joblib.dump({"fold_models": [], "pitcher_fold": {}, "features": []} if kind == "bundle" else [],
+                path.with_suffix(".joblib"))
+
+    def boom(*a, **k):
+        raise AssertionError("data was loaded")
+
+    monkeypatch.setattr(features, "load", boom)
+    monkeypatch.setattr(folds, "fit_folds", boom)
+    with pytest.raises(SystemExit) as e:
+        folds.main(["--model", str(path)])
+    assert "isn't needed" in str(e.value) and "v1.0.0" in str(e.value)
+    assert not folds.folds_path(path).exists()
+
+
+def test_folds_step_still_recognises_a_v100_model(tmp_path):
+    from webapp import folds
+    meta = {"version": "1.0.0", "scaling": {"oof_xrv_mean": 0.0, "oof_xrv_sd": 1.0, "season": 2026}}
+    path = tmp_path / "stuffplus_v1.0.0.json"
+    joblib.dump([], path.with_suffix(".joblib"))                 # v1.0.0 saved a plain list of models
+    assert not folds.already_has_folds(meta, path)
+    assert not folds.already_has_folds(meta, tmp_path / "missing.json")
+
+
+# ------------------------------------------------ v1.1.0 site path (no-remembering bundle)
+@pytest.fixture(scope="module")
+def v110_site(tmp_path_factory):
+    """A tiny Stuff+ (no remembering) v1.1.0 model in a temp models dir, shaped
+    like final.py's: fold models over 5 GroupKFold-by-pitcher folds, the fold
+    each pitcher was held out of, and metadata with xrv_mean scaling."""
+    import json
+
+    from sklearn.model_selection import GroupKFold
+
+    import models as stuff_models
+    from webapp import build as wb
+
+    root = tmp_path_factory.mktemp("site_root")
+    mdir = root / "models"
+    mdir.mkdir()
+    size = (40, 120)
+    df = wb.load_synthetic([2024, 2025, 2026], *size)
+    spec = stuff_models.CANDIDATES["A"]
+    feats = spec["features"]
+    small = {"n_estimators": 12, "learning_rate": 0.1}
+    fold_models, pitcher_fold = [], {}
+    for k, (i_fit, i_hold) in enumerate(GroupKFold(n_splits=5).split(df, groups=df["pitcher"])):
+        fold_models.append(stuff_models.fit_seed_models(spec, df.iloc[i_fit], small))
+        pitcher_fold.update(dict.fromkeys((int(p) for p in df["pitcher"].iloc[i_hold].unique()), k))
+    xrv = stuff_models.crossfit_xrv(fold_models, pitcher_fold, df[df["year"] == 2026], feats)
+    meta = {"name": "Stuff+ (no remembering)", "version": "1.1.0", "feature_set": "A", "features": feats,
+            "target": "target", "train_years": [2024, 2025, 2026], "seeds": [0, 1, 2],
+            "shrinkage": {"pitcher_k": {"k": 12.0}, "pitch_type_k": {"k": 4.0}},
+            "scaling": {"xrv_mean": float(np.nanmean(xrv)), "xrv_sd": float(np.nanstd(xrv)), "season": 2026}}
+    stem = mdir / "stuffplus_no_remembering_v1.1.0"
+    joblib.dump({"fold_models": fold_models, "pitcher_fold": pitcher_fold, "features": feats},
+                stem.with_suffix(".joblib"))
+    stem.with_suffix(".json").write_text(json.dumps(meta))
+    # an older remembering-model file next to it must not be picked instead
+    (mdir / "stuffplus_v1.1.0.json").write_text(json.dumps({**meta, "name": "Stuff+"}))
+    joblib.dump({"models": fold_models[0], "features": feats}, mdir / "stuffplus_v1.1.0.joblib")
+    return {"root": root, "models": mdir, "meta": stem.with_suffix(".json"), "size": size,
+            "fold_models": fold_models, "pitcher_fold": pitcher_fold, "df": df, "feats": feats}
+
+
+@pytest.fixture()
+def v110_paths(v110_site, monkeypatch):
+    from webapp import build as wb
+    monkeypatch.setattr(wb, "MODELS", v110_site["models"])
+    monkeypatch.setattr(wb, "ROOT", v110_site["root"])       # no leaderboards/ here: nothing published
+    return v110_site
+
+
+def test_site_builds_from_a_v110_no_remembering_bundle(v110_paths):
+    from webapp import build as wb
+    site = v110_paths
+    assert wb.frozen_meta() == site["meta"]
+    out = wb.build(synthetic=True, frozen=wb.frozen_meta(), synth_size=site["size"],
+                   out=site["models"] / "site.joblib")
+    b = joblib.load(out)
+    assert b["variant"] == "Stuff+ (no remembering) v1.1.0" and b["frozen"]
+    assert b["seasons"] == [2024, 2025, 2026] and len(b["folds"]) == 5
+    assert b["pitcher_fold"] == site["pitcher_fold"]
+    # every season is scored out-of-fold, none in-sample
+    assert all(note.startswith("Out-of-fold") for note in b["season_notes"].values()), b["season_notes"]
+    # 2026 uses the model's own published scaling constants
+    meta_scale = __import__("json").loads(site["meta"].read_text())["scaling"]
+    assert b["scale"][2026] == {"mu": meta_scale["xrv_mean"], "sd": meta_scale["xrv_sd"]}
+
+    # the grader scores a known pitcher with the fold that never saw him
+    pt = b["pitch_types"]
+    by_fold = {}
+    for pid in pt[pt["year"] == 2026]["pitcher"].unique():
+        by_fold.setdefault(site["pitcher_fold"][int(pid)], []).append(int(pid))
+    (k1, ids1), (k2, ids2) = list(by_fold.items())[:2]
+    rows = pt[(pt["pitcher"] == ids1[0]) & (pt["year"] == 2026)]
+    hand = rows["hand"].iat[0]
+    pitches = rows[["pitch_type", "usage", "velo", "spin", "ext", "rel_side", "rel_height",
+                    "ivb", "hb", "spin_axis", "arm_angle"]].to_dict("records")
+    own = grade_arsenal(b, hand, pitches, pitcher=ids1[0])
+    assert own["model"] == {"out_of_fold": True, "fold": k1, "pitcher": ids1[0]}
+    score = lambda r: [p["stuff_plus_model"] for p in r["pitches"]]  # noqa: E731
+    # same arsenal, another pitcher of the same fold -> same model, same scores
+    assert score(grade_arsenal(b, hand, pitches, pitcher=ids1[1])) == score(own)
+    # a pitcher of a different fold, or nobody, is a different model
+    other = grade_arsenal(b, hand, pitches, pitcher=ids2[0])
+    assert other["model"]["fold"] == k2 and score(other) != score(own)
+    anon = grade_arsenal(b, hand, pitches)
+    assert anon["model"] == {"out_of_fold": True, "fold": None, "pitcher": None}   # mean of all folds
+    assert score(anon) != score(own)
+
+
+def test_published_season_keeps_unqualified_pitchers(v110_paths):
+    """The published CSVs only hold qualified pitchers. The site shows their
+    published numbers and keeps everyone else with its own scores, so the
+    published season lists the same pitchers as any other season."""
+    from webapp import build as wb
+    site = v110_paths
+    plain = joblib.load(wb.build(synthetic=True, frozen=site["meta"], synth_size=site["size"],
+                                 out=site["models"] / "plain.joblib", spread=None))
+    own = plain["pitchers"][plain["pitchers"]["year"] == 2026].set_index("pitcher")
+    own_t = plain["pitch_types"][plain["pitch_types"]["year"] == 2026]
+    published = sorted(own.index)[::2]                         # every other pitcher is "qualified"
+    lb = site["root"] / "leaderboards"
+    lb.mkdir(exist_ok=True)
+    try:
+        op = own.loc[published].reset_index()
+        pd.DataFrame({"rank": range(1, len(op) + 1), "pitcher": op["pitcher"], "pitches": op["n"] + 7,
+                      "stuff_plus": 150.0 - np.arange(len(op)), "stuff_plus_raw": 151.0, "grade": 77,
+                      "role": "SP", "g": 9, "gs": 9}).to_csv(lb / "pitchers_2026_no_remembering.csv", index=False)
+        ot = own_t[own_t["pitcher"].isin(published) & (own_t["pitch_type"] == "FF")]
+        pd.DataFrame({"pitch_type": "FF", "rank_in_type": range(1, len(ot) + 1), "pitcher": ot["pitcher"].to_numpy(),
+                      "pitches": ot["n"].to_numpy(), "stuff_plus": 140.0, "stuff_plus_raw": 141.0,
+                      "grade": 66}).to_csv(lb / "pitch_types_2026_no_remembering.csv", index=False)
+        b = joblib.load(wb.build(synthetic=True, frozen=site["meta"], synth_size=site["size"],
+                                 out=site["models"] / "published.joblib", spread=None))
+    finally:
+        for f in lb.glob("*.csv"):
+            f.unlink()
+        lb.rmdir()
+    cur = b["pitchers"][b["pitchers"]["year"] == 2026].set_index("pitcher")
+    assert sorted(cur.index) == sorted(own.index)                         # nobody vanished
+    assert len(cur) == (b["pitchers"]["year"] == 2025).sum()
+    # published pitchers: the published numbers, in published order, first
+    assert list(cur.index[:len(published)]) == published
+    assert cur.loc[published, "stuff_plus"].tolist() == list(150.0 - np.arange(len(published)))
+    assert (cur.loc[published, "n"] == own.loc[published, "n"] + 7).all()
+    assert (cur.loc[published, "grade"] == 77).all() and (cur.loc[published, "role"] == "SP").all()
+    # everyone else: the site's own scores, with a grade computed by the site
+    rest = [p for p in own.index if p not in published]
+    np.testing.assert_allclose(cur.loc[rest, "stuff_plus"], own.loc[rest, "stuff_plus"])
+    np.testing.assert_allclose(cur.loc[rest, "stuff_plus_raw"], own.loc[rest, "stuff_plus_raw"])
+    assert (cur.loc[rest, "n"] == own.loc[rest, "n"]).all() and cur.loc[rest, "grade"].notna().all()
+    assert "site's own" in b["season_notes"][2026] and b["season_notes"][2025].startswith("Out-of-fold")
+    # pitch types: published where published, the site's own (not NaN) elsewhere
+    t = b["pitch_types"][b["pitch_types"]["year"] == 2026]
+    pub_rows = t["pitcher"].isin(published) & (t["pitch_type"] == "FF")
+    assert (t.loc[pub_rows, "stuff_plus"] == 140.0).all() and len(t) == len(own_t)
+    assert t["stuff_plus"].notna().all() and (t.loc[~pub_rows, "stuff_plus"] != 140.0).all()
+
+
+def test_roles_use_pitches_with_missing_features(v110_paths, monkeypatch):
+    """A pitch with a missing feature can't be scored, but it still counts for
+    who started the game, as in final.roles."""
+    import final
+    from webapp import build as wb
+    site = v110_paths
+    df = site["df"].copy()
+    # pitchers 0 and 1 share four games a season: 0 throws the first 30 pitches, 1 the rest
+    pair = df["pitcher"].isin([0, 1])
+    seq = df.groupby(["pitcher", "year"]).cumcount()
+    df["game_pk"] = df["year"] * 1000 + np.where(pair, seq // 30, 100 + df["pitcher"])
+    df["inning_topbot"] = "Top"
+    df["at_bat_number"] = seq + np.where(df["pitcher"] == 1, 1000, 0)
+    df["pitch_number"] = 1
+    # the starter's pitches in three of the four games have no spin reading
+    df.loc[(df["pitcher"] == 0) & (seq < 90), "spin_rate"] = np.nan
+    monkeypatch.setattr(wb, "load_synthetic", lambda *a, **k: df.copy())
+    b = joblib.load(wb.build(synthetic=True, frozen=site["meta"], synth_size=site["size"],
+                             out=site["models"] / "roles.joblib", spread=None))
+    board = b["pitchers"].set_index(["pitcher", "year"])
+    want = final.roles(df[df["year"] == 2026])
+    for pid in (0, 1):
+        row = board.loc[(pid, 2026)]
+        assert (row["games"], row["gs"], row["role"]) == tuple(want.loc[pid, ["g", "gs", "role"]])
+    assert board.loc[(0, 2026), "role"] == "SP" and board.loc[(0, 2026), "gs"] == 4
+    assert board.loc[(1, 2026), "role"] == "RP" and board.loc[(1, 2026), "gs"] == 0
+    assert board.loc[(0, 2026), "n"] == 30                 # only the scoreable pitches are graded
+
+
+def _js_engine():
+    import shutil
+    from pathlib import Path
+    jsc = Path("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc")
+    return shutil.which("node") or (str(jsc) if jsc.exists() else None)
+
+
+def test_grader_dropdown_keeps_pitch_types_without_a_template(tmp_path):
+    """An arsenal loaded from the leaderboard can hold FO, SC, KN ...; the row's
+    dropdown must offer that type, or it shows (and becomes) the first template."""
+    import re
+    import subprocess
+    from pathlib import Path
+    src = (Path(webapp.__file__).parent / "static" / "app.js").read_text()
+    fn = re.search(r"function pitchTypeOptions\(types, current\) \{.*?\n\}", src, re.S)
+    assert fn, "pitchTypeOptions is missing"
+    # the row's <select> is built from it, not from the bare template list
+    assert "pitchTypeOptions(types, p.pitch_type).map(" in src
+    assert "types.map(t => `<option value=\"${t}\" title" not in src
+    engine = _js_engine()
+    if engine is None:
+        pytest.skip("no JavaScript engine (node or jsc) to run the helper")
+    script = tmp_path / "check.js"
+    script.write_text(fn.group(0) + """
+const out = typeof console !== "undefined" && console.log ? console.log : print;
+const T = ["FF", "SI", "SL"];
+out(JSON.stringify([pitchTypeOptions(T, "FO"), pitchTypeOptions(T, "SL"), pitchTypeOptions(T, null),
+                    pitchTypeOptions(T, "KN").filter(t => t === "KN").length, T.length]));
+""")
+    res = subprocess.run([engine, str(script)], capture_output=True, text=True, timeout=30)
+    assert res.returncode == 0, res.stderr
+    import json
+    assert json.loads(res.stdout.strip().splitlines()[-1]) == [
+        ["FO", "FF", "SI", "SL"], ["FF", "SI", "SL"], ["FF", "SI", "SL"], 1, 3]
+
+
+def test_concurrent_saves_do_not_lose_each_other(bundle_file, tmp_path, monkeypatch):
+    """Saves arriving at the same time must all land: the read-modify-write of
+    the JSON file is serialized, and each write uses its own temp file."""
+    import threading
+    import time
+
+    from fastapi.testclient import TestClient
+
+    import webapp.app as app_module
+    from webapp.app import create_app
+
+    real_dumps = app_module.json.dumps
+
+    def slow_dumps(*a, **k):                      # hold the window between read and write open
+        time.sleep(0.02)
+        return real_dumps(*a, **k)
+
+    monkeypatch.setattr(app_module.json, "dumps", slow_dumps)
+    monkeypatch.setattr(app_module, "grade_arsenal", lambda *a, **k: {})     # grading is not under test
+    store = tmp_path / "custom.json"
+    c = TestClient(create_app(bundle_file, custom_path=store))
+    arsenal = [{"pitch_type": "FF", "usage": 60, "velo": 96, "spin": 2400, "ivb": 17, "hb": 8},
+               {"pitch_type": "SL", "usage": 40, "velo": 86, "spin": 2500, "ivb": 2, "hb": -4}]
+    codes = []
+
+    def save(i):
+        codes.append(c.post("/api/custom", json={"name": f"P{i}", "hand": "R", "pitches": arsenal}).status_code)
+
+    threads = [threading.Thread(target=save, args=(i,)) for i in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert codes == [200] * 12
+    saved = app_module.json.loads(store.read_text())
+    assert sorted(r["name"] for r in saved) == sorted(f"P{i}" for i in range(12))
+    assert len({r["id"] for r in saved}) == 12
+    assert [p.name for p in tmp_path.iterdir()] == ["custom.json"]            # no temp files left behind
+
+    # a failed write leaves the saved file intact and no temp file
+    def broken_dumps(*a, **k):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(app_module.json, "dumps", broken_dumps)
+    with pytest.raises(RuntimeError):
+        c.post("/api/custom", json={"name": "lost", "hand": "R", "pitches": arsenal})
+    assert len(app_module.json.loads(store.read_text())) == 12
+    assert [p.name for p in tmp_path.iterdir()] == ["custom.json"]

@@ -1,11 +1,32 @@
-# Stuff+ v1.0.0 — model card
+# Stuff+ v1.1.0 — model card
 
 A pitch-quality model in the style of tjStuff+ v3.0, trained on 2022–2026
 Statcast data, with a pre-registered attempt to improve on tjStuff+'s feature
 set. **That attempt did not succeed: none of the seven alternatives tested
-beat the tjStuff+ v3.0 feature set on held-out data, so v1.0.0 ships that
+beat the tjStuff+ v3.0 feature set on held-out data, so this release ships that
 feature set.** What this repository adds is the reproducible pipeline, the
-validation evidence, shrinkage, and the 2026 leaderboards.
+validation evidence, shrinkage, the 2026 leaderboards, and a second model that
+cannot remember the pitcher it is grading.
+
+## Two models
+
+Both use the same ten inputs and settings. They differ in whether the model was
+trained on the pitcher it is scoring.
+
+| | Stuff+ | Stuff+ (no remembering) |
+|---|---|---|
+| What it is | one model trained on every pitcher | five fold models, each trained without a fifth of the pitchers |
+| Scoring a pitcher | the one model | only a fold model that never saw him; a new pitcher gets the mean of all five |
+| What the score means | physical traits, plus what the model has learned about how that pitcher's pitches fare | physical traits only |
+| Next-season wOBA / RV/100 correlation (four forward splits, min 100 pitches) | 0.271 / 0.272 | 0.236 / 0.235 |
+| Stickiness | 0.869 | 0.862 |
+| Safe to use on | seasons after its training data only | any season |
+| 2026 leaderboard from | a model trained on 2022–2025 | the 2022–2026 fold models |
+| Files | `models/stuffplus_v1.1.0.*`, `leaderboards/*_2026.csv` | `models/stuffplus_no_remembering_v1.1.0.*`, `leaderboards/*_2026_no_remembering.csv` |
+
+Use Stuff+ when you want the better forecast, and Stuff+ (no remembering) when
+you want a grade that cannot be influenced by the pitcher's past results.
+`leaderboards/both_models_2026.csv` has both scores for every pitcher.
 
 ## Credit
 
@@ -58,14 +79,15 @@ location, count, pitch-type label, batter, arm angle, spin axis.
 
 - LightGBM regression, tjStuff+ v3.0 settings (1000 trees, learning rate 0.01,
   31 leaves), three seeds averaged. No hyperparameter tuning.
-- Stuff+ = 100 − 10 × (xRV − mean) / sd, with mean and sd from 2026 pitches.
+- Stuff+ = 100 − 10 × (xRV − mean) / sd, with mean and sd from 2026 pitches
+  (each model has its own constants, in its JSON).
 - Pitcher and pitch-type scores are shrunk toward the league mean:
   league + n / (n + k) × (raw − league), k = 12.7 pitches at pitcher level and
-  3.7 at pitch-type level, from split-half reliability (0.95) of out-of-fold
-  scores. Shrinkage matters only for very small samples.
-- Artifacts: `models/stuffplus_v1.0.0.joblib` (not in git) and
-  `models/stuffplus_v1.0.0.json` (features, scaling constants, shrinkage
-  constants, library versions).
+  3.7 at pitch-type level, from split-half reliability (0.95) of
+  out-of-fold scores. Shrinkage matters only for very small samples.
+- `python score.py file.parquet out.csv` scores new Statcast pitches with
+  Stuff+; add `--no-remembering` for the other model. The `.joblib` files are
+  not in git; `python final.py` rebuilds them.
 
 ## Validation
 
@@ -124,6 +146,11 @@ excluding zero. Neither candidate did; J's development lead reversed. At 300
 and 500 pitches S6 trails the baseline by 0.04–0.05 on both result
 correlations (intervals include zero).
 
+The locked confirmation scored pitchers with a model trained on their earlier
+seasons, which can favor features that identify a pitcher (A's release point
+and extension); E1's out-of-pitcher comparison, below, is the check that A
+still leads without that.
+
 Also examined and dropped before pre-registration: approach angles on a 3×3
 zone grid. The 18 grid angles span two dimensions (two principal components
 explain 100.00% of their variance), so the grid collapses to its centre point.
@@ -135,6 +162,25 @@ between models of less than roughly ±0.02 to ±0.05 in these correlations canno
 be detected in one validation season. The tests here show that none of the
 alternatives is clearly better. They do not show the alternatives are worse or
 equivalent.
+
+### What remembering is worth (exploratory)
+
+`crossfit_test.py` (plan E2 in `EXPLORATORY.md`) trains both ways on the same
+seasons and scores the next one, for four forward splits (scoring 2022–2025,
+training from 2020). Stuff+ (no remembering) minus Stuff+:
+
+| Min pitches | Next wOBA | Next RV/100 | Next K−BB% | Stickiness |
+|---|---:|---:|---:|---:|
+| 100 | −0.036 [−0.053, −0.020] | −0.037 [−0.055, −0.020] | −0.034 [−0.048, −0.020] | −0.007 [−0.016, +0.002] |
+| 300 | −0.036 [−0.059, −0.017] | −0.038 [−0.063, −0.018] | −0.032 [−0.049, −0.016] | −0.008 [−0.016, +0.001] |
+| 500 | −0.029 [−0.053, −0.008] | −0.032 [−0.059, −0.010] | −0.023 [−0.039, −0.007] | −0.010 [−0.019, −0.001] |
+
+Not remembering the pitcher costs about 0.037 in next-season correlation
+(0.272 → 0.235), in every split, with intervals that exclude zero. The
+remembered part is persistent, pitcher-specific signal the ten inputs cannot
+see. It may include command and deception, but also park, team defense and
+catcher framing, so it is not all the pitcher's own skill.
+The two scores correlate 0.93–0.97 across pitchers.
 
 ### Overfitting check
 
@@ -152,12 +198,14 @@ saw that pitcher (out-of-pitcher), and with later seasons.
   fit is about seven times the out-of-sample fit, and in-sample Stuff+ tracks a
   pitcher's own same-season results much more closely (0.44 against 0.28).
   In-sample scores are therefore inflated and are not used anywhere in the
-  validation tables or leaderboards.
+  validation tables or leaderboards: Stuff+ only scores seasons after its
+  training data, and Stuff+ (no remembering) never scores a pitcher it saw.
 - Out-of-sample fit is stable: R² is the same for unseen pitchers and for the
   next two seasons, so nothing degrades over time.
 - Memorised pitchers are predicted **better** the following season (0.30
-  against 0.19), because a pitcher's past results carry real information
-  (command, deception) that the ten physical inputs do not. A score for a
+  against 0.19), because a pitcher's past results carry persistent,
+  pitcher-specific signal the ten physical inputs do not (possibly command and
+  deception, but also park, team defense and catcher framing). A score for a
   pitcher the model has trained on is therefore partly a record of how that
   pitcher has performed, not purely a grade of the pitch's physical traits.
   The next-season validation tables above are of this kind, since most
@@ -165,69 +213,123 @@ saw that pitcher (out-of-pitcher), and with later seasons.
 
 ## 2026 outputs
 
-- `leaderboards/pitchers_2026.csv`: 720 pitchers with at least 100 pitches.
-- `leaderboards/pitch_types_2026.csv`: 2,557 pitcher × pitch-type rows with at
-  least 50 pitches of the type.
-- Scores are **out-of-fold**: each pitcher is scored by a model trained without
-  that pitcher (5 folds by pitcher across 2022–2026), so a pitcher's own
-  results cannot leak into their score. Out-of-fold and in-sample pitcher
-  scores correlate 0.95.
+| File | Contents |
+|---|---|
+| `leaderboards/pitchers_2026.csv` | Stuff+, 720 pitchers with at least 100 pitches |
+| `leaderboards/pitch_types_2026.csv` | Stuff+, 2,557 pitcher × pitch-type rows with at least 50 pitches |
+| `leaderboards/pitchers_2026_no_remembering.csv` | Stuff+ (no remembering), 720 pitchers |
+| `leaderboards/pitch_types_2026_no_remembering.csv` | Stuff+ (no remembering), 2,557 rows |
+| `leaderboards/both_models_2026.csv` | both scores and ranks side by side |
+
 - Grades are on the 20–80 scale: 50 + 10 z among qualified pitchers (overall
   and within role), or among qualified pitches of the same type, clipped.
-- The pitcher-level sd of Stuff+ is 4.7, so 110 is about two standard
-  deviations above average.
+- The pitcher-level sd is 4.6 for Stuff+ and 4.7 for Stuff+ (no remembering), so
+  110 is about two standard deviations above average.
+
+### How the two leaderboards differ
+
+- Pitcher scores correlate 0.95 (0.95 for the 596 pitchers with earlier seasons,
+  0.97 for the 124 who debuted in 2026). The median difference is 0.6 points and
+  3% of pitchers differ by more than 3. 19 of the top 25 overlap (at least 500 pitches).
+- The largest gap overall is Danny Coulombe (385 pitches): 82.6 without
+  remembering, 102.6 with, a difference of 20 points. The next largest is under 8.
+- Among pitchers with at least 500 pitches, Stuff+ is furthest above the
+  physical grade for Hoby Milner (89.4 → 96.5), Devin Williams (99.8 → 106.0)
+  and Tyler Wells (89.2 → 95.2).
+- It is furthest below for Caleb Thielbar (106.4 → 100.9), Tanner Bibee
+  (96.2 → 92.4) and Mason Miller (116.4 → 112.7).
+
+Differences reflect what Stuff+ has learned about a pitcher from earlier
+seasons and, to a lesser extent, that its leaderboard model was trained without
+2026.
+
+Top five with at least 500 pitches:
+
+| Stuff+ | Role | Pitches | Score |
+|---|---|---:|---:|
+| Trevor Megill | RP | 873 | 115.2 |
+| Tyler Rogers | RP | 1,013 | 114.9 |
+| Jacob Misiorowski | SP | 2,644 | 113.5 |
+| Chase Burns | SP | 2,563 | 113.1 |
+| Jhoan Duran | RP | 947 | 113.1 |
+
+| Stuff+ (no remembering) | Role | Pitches | Score |
+|---|---|---:|---:|
+| Mason Miller | RP | 1,148 | 116.4 |
+| Chase Burns | SP | 2,563 | 115.6 |
+| Jacob Misiorowski | SP | 2,644 | 114.4 |
+| Trevor Megill | RP | 873 | 114.4 |
+| Edgardo Henriquez | RP | 968 | 112.7 |
 
 ### Starters and relievers
 
 A pitcher is a starter if he threw his team's first pitch in at least half of
-his games (so openers count as starters).
+his games (so openers count as starters). Mean Stuff+ of qualified pitchers:
 
-| Role | Pitchers | Pitches | Stuff+ (pitch-weighted) | Stuff+ (mean) | sd |
-|---|---:|---:|---:|---:|---:|
-| RP | 491 | 308,767 | 100.9 | 100.6 | 4.8 |
-| SP | 229 | 395,226 | 99.3 | 99.1 | 4.3 |
+| Role | Pitchers | Stuff+ | Stuff+ (no remembering) |
+|---|---:|---:|---:|
+| RP | 491 | 100.6 | 100.6 |
+| SP | 229 | 98.9 | 99.0 |
 
-`grade_in_role` in the pitcher leaderboard grades each pitcher against his own
+`grade_in_role` in the pitcher leaderboards grades each pitcher against his own
 role.
 
 ### Park check
 
-Same pitchers' Stuff+ at a park minus everywhere else (at least 50 pitches in
+Same pitchers' score at a park minus everywhere else (at least 50 pitches in
 both), 2026:
 
-| Park | Stuff+ difference | SE | Pitchers |
-|---|---:|---:|---:|
-| COL | −5.4 | 0.3 | 106 |
-| ATH | −1.1 | 0.2 | 114 |
-| DET | −1.1 | 0.2 | 110 |
-| KC | −1.0 | 0.2 | 107 |
-| … 22 parks between −0.8 and +1.1 | | | |
-| MIA | +1.7 | 0.2 | 102 |
-| SD | +1.7 | 0.2 | 113 |
-| HOU | +2.4 | 0.2 | 113 |
-| TB | +2.5 | 0.2 | 108 |
+| Park | Stuff+ | Stuff+ (no remembering) |
+|---|---:|---:|
+| COL | -5.3 | -5.4 |
+| ATH | -1.0 | -1.1 |
+| DET | -1.1 | -1.1 |
+| KC | -1.0 | -1.0 |
+| … 22 parks between -0.8 and +1.1 (no remembering) | | |
+| MIA | +1.8 | +1.7 |
+| SD | +1.7 | +1.7 |
+| HOU | +2.4 | +2.4 |
+| TB | +2.5 | +2.5 |
 
-Coors Field lowers Stuff+ by about 5.4 points, more than one pitcher-level
-standard deviation; pooled over 2022–2026 it is −5.7. Scores are **not** park
-adjusted. All parks: `reports/park_check_2026.csv`,
-`reports/park_check_2022_2026.csv`.
+Coors Field lowers both scores by about 5.4 points, more than one pitcher-level
+standard deviation. Scores are **not** park adjusted. All parks:
+`reports/park_check_2026.csv`, `reports/park_check_2026_no_remembering.csv`,
+and pooled over 2022–2026 in `reports/park_check_2022_2026_no_remembering.csv`.
 
 ## Six-variable comparison model (S6)
 
-For side-by-side comparison, S6 is also trained on 2022–2026 with the same
-procedure and published next to the shipped model: `models/stuffplus_s6_v1.0.0.json`,
+For side-by-side comparison, S6 is also trained on 2022–2026, scored without
+remembering the pitcher, and published next to Stuff+ (no remembering): `models/stuffplus_s6_v1.0.0.json`,
 `leaderboards/pitchers_2026_s6.csv`, `leaderboards/pitch_types_2026_s6.csv`,
 `leaderboards/comparison_2026.csv`, and `reports/comparison_a_vs_s6.md`. It is
 **not** the recommended model: it was not confirmed as better than A, and it
 trails A at 300 and 500 pitches.
 
-- Pitcher scores from the two models correlate 0.80; the median difference is
+- Pitcher scores from S6 and Stuff+ (no remembering) correlate 0.80; the median difference is
   1.7 points and 9% of pitchers differ by more than 5.
 - They disagree most on unusual arm slots and cutters. S6 scores submarine and
   sidearm relievers far lower (Tyler Rogers 109.7 → 90.1), because it has no
   release-position input.
 - S6 is less affected by Coors (−2.4 against −5.4) and slightly more tied to
   velocity (r = 0.69 against 0.63).
+
+### E1: out-of-pitcher comparison on 2020–2026 (exploratory)
+
+`pitcher_holdout.py` (plan in `EXPLORATORY.md`) scores every 2020–2026 pitch
+with a model that never saw that pitcher (5 folds by pitcher, 4.5 million
+pitches, 1,863 pitchers) and averages six season pairs. S6 minus A:
+
+| Min pitches | Next wOBA | Next RV/100 | Stickiness |
+|---|---:|---:|---:|
+| 100 | −0.022 [−0.048, +0.003] | −0.020 [−0.046, +0.005] | +0.011 [−0.002, +0.025] |
+| 300 | −0.049 [−0.080, −0.022] | −0.046 [−0.077, −0.019] | +0.009 [−0.005, +0.022] |
+| 500 | −0.030 [−0.063, −0.000] | −0.028 [−0.060, +0.002] | +0.013 [−0.001, +0.027] |
+
+With memory of the pitcher removed, A predicts next-season results better than
+S6: the gap is borderline at 100 pitches and excludes zero at 300. S6's apparent
+lead on 87 newly debuted pitchers did not hold up on the larger sample. S6 is
+about 0.01 stickier. This was run on data already examined, so it is supporting
+evidence for shipping A, not a confirmation.
 
 ## Limitations
 
@@ -237,9 +339,10 @@ trails A at 300 and 500 pitches.
 - **No location or sequencing.** Command, pitch mix, tunnelling and count
   leverage are invisible to it. It grades the pitch, not the pitcher.
 - **Reliever velocity bias.** Relievers throw harder in short outings and score
-  1.6 points higher on average. A reliever's Stuff+ would not carry over to a
+  about 1.6 points higher on average. A reliever's Stuff+ would not carry over to a
   starting role unchanged; use `grade_in_role` for within-role comparisons.
-- **Handedness gap.** Left-handers average 98.0 and right-handers 101.0. The
+- **Handedness gap.** Left-handers average 98.0 and right-handers 100.9
+  (the same in both models). The
   model has no batter-side feature, so this reflects velocity and shape
   differences, not platoon effects.
 - **Unusual arm slots.** Sidearm and submarine pitchers are rare in training
@@ -260,14 +363,16 @@ trails A at 300 and 500 pitches.
 - **Short training window.** Five seasons. The published tjStuff+ model trains
   on earlier seasons this project did not use.
 - **Small samples at the top.** A 100-pitch minimum admits pitchers with a
-  handful of outings; the 2026 number one has 103 pitches. Shrinkage moves such
+  handful of outings; one pitcher near the top of both boards has 103 pitches. Shrinkage moves such
   scores by only a point or two. Filter on `pitches` for a stricter board.
-- **Memorisation of known pitchers.** The model fits its training pitchers
-  about seven times better than unseen ones (see the overfitting check). The
-  saved model was trained on every 2022–2026 pitcher, so its score for a
-  returning pitcher partly reflects that pitcher's past results; the
-  leaderboards use out-of-fold scores to avoid this. Scores from the saved
-  model and from the leaderboards are not interchangeable.
+- **Stuff+ remembers pitchers.** It fits its training pitchers about seven times
+  better than unseen ones, so it must only score seasons after its training
+  data; `score.py` warns otherwise. A returning pitcher's Stuff+ partly reflects
+  his past results. Use Stuff+ (no remembering) for a grade free of that, at a
+  cost of about 0.037 in next-season correlation.
+- **The Stuff+ leaderboard and the saved Stuff+ model differ in training data.**
+  The 2026 leaderboard comes from a model trained on 2022–2025; the saved model
+  adds 2026 and is meant for 2027.
 - **Predictive power is modest.** Correlation with next-season wOBA is 0.22–0.35
   depending on the pitch minimum. Stuff+ is one input, not a projection.
 
