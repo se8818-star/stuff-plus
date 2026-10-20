@@ -2,10 +2,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import physics
-from physics import (GRID, HAA_GRID_COLS, VAA_GRID_COLS, Y50, Y_PLATE, actual_angles,
+from stuffplus import physics
+from stuffplus.physics import (GRID, HAA_GRID_COLS, VAA_GRID_COLS, Y50, Y_PLATE, actual_angles,
                      angles_at_target, grid_angles, release_state)
-from synthetic import make
+from stuffplus.synthetic import make
 
 
 def random_pitches(n=500, seed=0):

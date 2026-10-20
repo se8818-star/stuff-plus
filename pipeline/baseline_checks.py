@@ -3,12 +3,12 @@ Phase 2 sanity checks on the tjStuff+ v3.0 baseline (variant A, fold 1):
 no-fastball handling, seeds, LightGBM settings, handedness mirroring, and a
 comparison with TJ's published 2024 scores (data/external/, from his repo).
 
-    python baseline_checks.py        # writes results/phase2_baseline_checks.json
+    python -m pipeline.baseline_checks        # writes results/phase2_baseline_checks.json
 """
 import json, numpy as np, pandas as pd
 from pathlib import Path
-import run_ablation as ra
-from features import VARIANTS, load
+from stuffplus import run_ablation as ra
+from stuffplus.features import VARIANTS, load
 df = load(Path("data"), [2022, 2023, 2024, 2025])
 feats = VARIANTS["A_tj_v3"]
 out = {}
@@ -50,7 +50,7 @@ d2 = df.copy(); l = d2.p_throws == "L"; d2.loc[l, "ax"] = -d2.loc[l, "ax"]; d2.l
 d2["ax_diff"] = (d2.ax - np.where(l, -d2.fb_ax, d2.fb_ax)).abs()
 run(d2, "control: mirroring removed")
 # TJ's x0/z0 come from the MLB API, i.e. the fit at y=50 rather than at release
-import physics
+from stuffplus import physics
 d3 = df.copy()
 t_r = physics._time_to_y(physics.Y50, d3.vy0.to_numpy(), d3.ay.to_numpy(), 60.5 - d3.release_extension.to_numpy())
 raw_ax = np.where(d3.p_throws == "L", -d3.ax, d3.ax)

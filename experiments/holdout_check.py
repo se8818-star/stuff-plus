@@ -3,20 +3,20 @@ Exploratory (run after the fold 2 confirmation, so it cannot change that
 verdict): train on 2022-24 and look at both held-out seasons, 2025 and 2026,
 splitting pitchers by whether the model saw them in training.
 
-    python holdout_check.py     # results/holdout_2025_2026.json, reports/holdout_2025_2026.md
+    python -m experiments.holdout_check     # results/holdout_2025_2026.json, reports/holdout_2025_2026.md
 """
 import json
 from pathlib import Path
 
 import numpy as np
 
-import run_ablation as ra
-from develop import pitcher_table, stuff_plus, table
-from features import load
-from models import AMENDED, CANDIDATES, add_outcome_flags, fit_predict
-from overfit_check import r2
+from stuffplus import run_ablation as ra
+from pipeline.develop import pitcher_table, stuff_plus, table
+from stuffplus.features import load
+from stuffplus.models import AMENDED, CANDIDATES, add_outcome_flags, fit_predict
+from experiments.overfit_check import r2
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 TRAIN = [2022, 2023, 2024]
 
 
@@ -25,7 +25,7 @@ def corr(j, a, b, flip=True):
 
 
 def main():
-    df = add_outcome_flags(load(HERE / "data", TRAIN + [2025, 2026]))
+    df = add_outcome_flags(load(ROOT / "data", TRAIN + [2025, 2026]))
     df = df[df["target"].notna()].reset_index(drop=True)
     tr, y25, y26 = df[df["year"].isin(TRAIN)], df[df["year"] == 2025], df[df["year"] == 2026]
     seen = set(tr["pitcher"])
@@ -52,7 +52,7 @@ def main():
         out[name] = res
         print(name, json.dumps(res, indent=1), flush=True)
     out["env"] = ra.env_info()
-    (HERE / "results" / "holdout_2025_2026.json").write_text(json.dumps(out, indent=1))
+    (ROOT / "results" / "holdout_2025_2026.json").write_text(json.dumps(out, indent=1))
     rows = []
     for n in ("A", "S6"):
         for g, lab in (("all", "all pitchers"), ("known", "in 2022–24 training"), ("new", "debuted after 2024")):
@@ -69,7 +69,7 @@ def main():
                  "2025 Stuff+ vs 2026 wOBA", "2025 Stuff+ vs 2026 RV/100", "Stickiness 2025 → 2026"], rows), "",
           table(["Model", "Pitch R² 2025", "Pitch R² 2026"],
                 [[n, f"{out[n]['pitch_r2']['2025']:.5f}", f"{out[n]['pitch_r2']['2026']:.5f}"] for n in ("A", "S6")]), ""]
-    (HERE / "reports" / "holdout_2025_2026.md").write_text("\n".join(md))
+    (ROOT / "reports" / "holdout_2025_2026.md").write_text("\n".join(md))
     print("\n".join(md))
 
 

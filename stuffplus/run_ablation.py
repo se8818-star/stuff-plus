@@ -13,10 +13,10 @@ design, with rolling-origin folds:
   fold and for the mean of the folds (pitchers resampled jointly across folds).
 
 Usage
-  python fetch_data.py                     # once, downloads 2022-2026
-  python run_ablation.py --seeds 3         # all variants, both folds
-  python run_ablation.py --folds 1 --variants A_tj_v3 D_grid9_angles_only
-  python run_ablation.py --synthetic       # smoke test without data
+  python -m pipeline.fetch_data                     # once, downloads 2022-2026
+  python -m stuffplus.run_ablation --seeds 3         # all variants, both folds
+  python -m stuffplus.run_ablation --folds 1 --variants A_tj_v3 D_grid9_angles_only
+  python -m stuffplus.run_ablation --synthetic       # smoke test without data
 """
 import argparse
 import json
@@ -28,9 +28,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from features import SPECS, VARIANTS, GRID, add_expected_target, add_features, load
+from stuffplus.features import SPECS, VARIANTS, GRID, add_expected_target, add_features, load
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 BASE = "A_tj_v3"
 FOLDS = {1: {"train": [2022, 2023], "eval": 2024},
          2: {"train": [2022, 2023, 2024], "eval": 2025}}
@@ -274,7 +274,7 @@ def main():
     ap.add_argument("--variants", nargs="*", default=list(VARIANTS))
     ap.add_argument("--folds", nargs="*", type=int, default=[1], choices=list(FOLDS))
     ap.add_argument("--unlock-fold2", action="store_true",
-                    help="fold 2 is the one-shot confirmation test (see PREREGISTRATION.md)")
+                    help="fold 2 is the one-shot confirmation test (see docs/PREREGISTRATION.md)")
     ap.add_argument("--min-pitches", type=int, default=100)
     ap.add_argument("--seeds", type=int, default=1, help="average N model seeds")
     ap.add_argument("--boot", type=int, default=1000)
@@ -282,16 +282,16 @@ def main():
     args = ap.parse_args()
 
     if 2 in args.folds and not (args.synthetic or args.unlock_fold2):
-        sys.exit("Fold 2 is locked until the final candidate is frozen (PREREGISTRATION.md).")
+        sys.exit("Fold 2 is locked until the final candidate is frozen (docs/PREREGISTRATION.md).")
 
     t0 = time.time()
     years = sorted({y for f in args.folds for y in FOLDS[f]["train"] + [FOLDS[f]["eval"], FOLDS[f]["eval"] + 1]})
     if args.synthetic:
-        from synthetic import make
+        from stuffplus.synthetic import make
         df = add_features(add_expected_target(
             make(n_pitchers=150, pitches_per_season=400, years=tuple(years))))
     else:
-        df = load(HERE / "data", years)
+        df = load(ROOT / "data", years)
     print(f"loaded {len(df):,} pitches in {time.time()-t0:.0f}s")
     print("env: " + ", ".join(f"{k} {v}" for k, v in env_info().items() if v))
 
@@ -326,9 +326,9 @@ def main():
                              for k, (lo, hi) in bs["mean_ci"].items())
             print(f"  {name:<24}{line}")
 
-    (HERE / "results").mkdir(exist_ok=True)
+    (ROOT / "results").mkdir(exist_ok=True)
     tag = "synthetic" if args.synthetic else "folds" + "".join(map(str, args.folds))
-    path = HERE / "results" / f"ablation_{tag}.json"
+    path = ROOT / "results" / f"ablation_{tag}.json"
     with open(path, "w") as f:
         json.dump({"args": vars(args), "seeds": seeds, "env": env_info(), "baseline": BASE,
                    "folds": {k: FOLDS[k] for k in args.folds}, "specs": SPECS,
@@ -336,7 +336,7 @@ def main():
                    "grid_pca_cumvar": cum.tolist(), "grid_pca": pca,
                    "results": fold_results, "vs_baseline": comparison},
                   f, indent=2, default=float)
-    print(f"\nsaved {path.relative_to(HERE)}  (total {time.time()-t0:.0f}s)")
+    print(f"\nsaved {path.relative_to(ROOT)}  (total {time.time()-t0:.0f}s)")
 
 
 if __name__ == "__main__":

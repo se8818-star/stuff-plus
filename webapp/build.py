@@ -5,8 +5,8 @@ Train a Stuff+ model and precompute everything the website shows.
     python -m webapp.build --synthetic           # demo bundle, no data needed
     python -m webapp.build --variant B_plus_center --train 2022 2023 2024 2025
 
-Uses the frozen model from final.py when there is one, otherwise trains one
-feature-set variant from features.py with run_ablation.py's model settings;
+Uses the frozen model from pipeline/final.py when there is one, otherwise trains one
+feature-set variant from stuffplus/features.py with stuffplus/run_ablation.py's model settings;
 scores every season, and writes a single joblib bundle under models/
 (gitignored) with the model, scaling constants, leaderboards, and 20-80 grade
 constants. The existing ablation code is imported, not changed.
@@ -32,13 +32,12 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
 
-from features import VARIANTS, load  # noqa: E402
-from physics import actual_angles  # noqa: E402
-from run_ablation import make_model  # noqa: E402
-from webapp.folds import fit_folds, folds_path, oof_predict  # noqa: E402
-from webapp.grading import AveragedModel, accel_to_movement, rescale  # noqa: E402
+from stuffplus.features import VARIANTS, load
+from stuffplus.physics import actual_angles
+from stuffplus.run_ablation import make_model
+from webapp.folds import fit_folds, folds_path, oof_predict
+from webapp.grading import AveragedModel, accel_to_movement, rescale
 
 MODELS = ROOT / "models"
 MIN_PITCHER_GRADE = 100   # pitchers used for overall 20-80 constants
@@ -50,8 +49,8 @@ def bundle_path(variant, synthetic):
 
 
 def load_synthetic(seasons, n_pitchers=220, pitches_per_season=500):
-    from synthetic import make
-    from features import add_features
+    from stuffplus.synthetic import make
+    from stuffplus.features import add_features
     df = make(n_pitchers=n_pitchers, pitches_per_season=pitches_per_season,
               years=tuple(seasons), seed=7)
     df["player_name"] = "Synthetic Pitcher " + df["pitcher"].astype(str)
@@ -119,7 +118,7 @@ def site_models():
 def frozen_meta():
     """The default model's metadata, if any. Since v1.1.0 the website opens on
     Stuff+ (no remembering), models/stuffplus_no_remembering_v<version>.json,
-    whose bundle already holds final.py's fold models. Before that it was
+    whose bundle already holds pipeline/final.py's fold models. Before that it was
     models/stuffplus_v<version>.json plus webapp.folds."""
     metas = site_models()
     return metas[0] if metas else None
@@ -188,7 +187,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     else:
         seasons = sorted(int(p.stem.split("_")[1]) for p in (ROOT / "data").glob("statcast_*.parquet"))
         if not seasons:
-            raise SystemExit("No data/statcast_*.parquet found. Run `python fetch_data.py`, "
+            raise SystemExit("No data/statcast_*.parquet found. Run `python -m pipeline.fetch_data`, "
                              "or use --synthetic for a demo.")
         df = load_real(seasons)
     print(f"loaded {len(df):,} pitches ({seasons[0]}-{seasons[-1]}) in {time.time()-t0:.0f}s")
@@ -201,7 +200,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         k_type = meta["shrinkage"]["pitch_type_k"]["k"]
         fp = folds_path(frozen)
         art = joblib.load(Path(frozen).with_suffix(".joblib"))
-        own_folds = isinstance(art, dict) and "fold_models" in art      # final.py >= 1.1.0
+        own_folds = isinstance(art, dict) and "fold_models" in art      # pipeline/final.py >= 1.1.0
         # published leaderboards: pitchers_<season><suffix>.csv, e.g. _no_remembering, _s6
         suffix = model_family(Path(frozen).stem)[len("stuffplus"):]
         oof = own_folds or fp.exists()
@@ -264,7 +263,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
         print("  movement check vs Statcast pfx (median abs diff, in): "
               f"IVB {(sc['ivb'] - sc['pfx_z'] * 12).abs().median():.2f}, "
               f"HB {(sc['hb'] - hb_sc).abs().median():.2f}")
-    # features.py mirrors LHP spin axis; show and pre-fill the raw Savant value
+    # stuffplus/features.py mirrors LHP spin axis; show and pre-fill the raw Savant value
     sc["spin_axis_raw"] = np.where(sc["p_throws"] == "L", (360 - sc["spin_axis"]) % 360, sc["spin_axis"])
     # approach angles where the pitch actually crosses the plate, as Savant shows
     # them (degrees; VAA closer to 0 = flatter); HAA mirrored so + = toward arm side
@@ -272,7 +271,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     if {"vx0", "vy0", "vz0", "ay"} <= set(sc.columns):
         lhp = (sc["p_throws"] == "L").to_numpy()
         vaa, haa = actual_angles(sc["vx0"].to_numpy(), sc["vy0"].to_numpy(), sc["vz0"].to_numpy(),
-                                 np.where(lhp, -sc["ax"], sc["ax"]),  # features.py mirrored ax for LHP
+                                 np.where(lhp, -sc["ax"], sc["ax"]),  # stuffplus/features.py mirrored ax for LHP
                                  sc["ay"].to_numpy(), sc["az"].to_numpy())
         sc["vaa"], sc["haa"] = vaa, np.where(lhp, haa, -haa)
 
@@ -304,7 +303,7 @@ def build(variant="A_tj_v3", synthetic=False, train=None, seed=0, out=None,
     fb = pt[pt["pitch_type"].isin(["FF", "SI", "FC"])].sort_values("n", ascending=False) \
         .drop_duplicates(keys)[keys + ["velo"]].rename(columns={"velo": "fb_velo"})
     tot = tot.merge(fb, on=keys, how="left")
-    # Roles from every pitch final.py counts (those with a run value), before
+    # Roles from every pitch pipeline/final.py counts (those with a run value), before
     # rows with missing features are dropped: a starter whose first pitch of a
     # game has no spin reading still started it. Matches final.roles.
     roles = roles_by_season(df[df["target"].notna()] if "target" in df else df)

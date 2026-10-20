@@ -3,13 +3,13 @@ Turn results/ablation_folds12.json into reports/ablation.md: per-fold metrics,
 mean-of-folds differences vs the baseline with paired-bootstrap 95% CIs, the
 pre-set selection rule, per-pitch-type stickiness, and the grid PCA.
 
-    python report_ablation.py [results/ablation_folds12.json]
+    python -m experiments.report_ablation [results/ablation_folds12.json]
 """
 import json
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 KEYS = ["stickiness", "next_woba", "next_k_bb", "next_rv100"]
 HEAD = {"stickiness": "Stickiness", "next_woba": "Next wOBA", "next_k_bb": "Next K−BB%",
         "next_rv100": "Next RV/100"}
@@ -30,7 +30,7 @@ def table(header, rows):
 
 
 def main():
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "results" / "ablation_folds12.json"
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "results" / "ablation_folds12.json"
     R = json.loads(path.read_text())
     folds, base, res, cmp = list(R["results"]), R["baseline"], R["results"], R["vs_baseline"]
     names = [n for n in R["variants"] if all(n in res[f] for f in folds)]
@@ -90,7 +90,7 @@ def main():
         md.append(f"- Adding extension to that fit leaves "
                   f"{p['max_resid_sd_deg_after_center_pair_plus_extension']:.4f}°.")
     md += ["", "Library versions: " + ", ".join(f"{k} {v}" for k, v in R["env"].items() if v), ""]
-    out = HERE / "reports" / "ablation.md"
+    out = ROOT / "reports" / "ablation.md"
     out.parent.mkdir(exist_ok=True)
     out.write_text("\n".join(md))
     print(f"wrote {out}")

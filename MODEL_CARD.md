@@ -85,9 +85,9 @@ location, count, pitch-type label, batter, arm angle, spin axis.
   league + n / (n + k) × (raw − league), k = 12.7 pitches at pitcher level and
   3.7 at pitch-type level, from split-half reliability (0.95) of
   out-of-fold scores. Shrinkage matters only for very small samples.
-- `python score.py file.parquet out.csv` scores new Statcast pitches with
+- `python -m pipeline.score file.parquet out.csv` scores new Statcast pitches with
   Stuff+; add `--no-remembering` for the other model. The `.joblib` files are
-  not in git; `python final.py` rebuilds them.
+  not in git; `python -m pipeline.final` rebuilds them.
 
 ## Validation
 
@@ -111,7 +111,7 @@ trained on 2020–22).
 ### Alternatives tested against it
 
 The candidate list, selection rule and confirmation rule were committed before
-any candidate was run (`PREREGISTRATION.md`, which also records four
+any candidate was run (`docs/PREREGISTRATION.md`, which also records four
 deviations). Development used 5-fold cross-validation by pitcher inside
 2022–23 plus the 2024 → 2025 split. The 2025 → 2026 split was locked and run
 once.
@@ -165,7 +165,7 @@ equivalent.
 
 ### What remembering is worth (exploratory)
 
-`crossfit_test.py` (plan E2 in `EXPLORATORY.md`) trains both ways on the same
+`experiments/crossfit_test.py` (plan E2 in `docs/EXPLORATORY.md`) trains both ways on the same
 seasons and scores the next one, for four forward splits (scoring 2022–2025,
 training from 2020). Stuff+ (no remembering) minus Stuff+:
 
@@ -184,7 +184,7 @@ The two scores correlate 0.93–0.97 across pitchers.
 
 ### Overfitting check
 
-`overfit_check.py` trains on 2022–23 and compares scores for the training
+`experiments/overfit_check.py` trains on 2022–23 and compares scores for the training
 pitches (in-sample) with scores for the same pitches from a model that never
 saw that pitcher (out-of-pitcher), and with later seasons.
 
@@ -315,7 +315,7 @@ trails A at 300 and 500 pitches.
 
 ### E1: out-of-pitcher comparison on 2020–2026 (exploratory)
 
-`pitcher_holdout.py` (plan in `EXPLORATORY.md`) scores every 2020–2026 pitch
+`experiments/pitcher_holdout.py` (plan in `docs/EXPLORATORY.md`) scores every 2020–2026 pitch
 with a model that never saw that pitcher (5 folds by pitcher, 4.5 million
 pitches, 1,863 pitchers) and averages six season pairs. S6 minus A:
 
@@ -367,7 +367,7 @@ evidence for shipping A, not a confirmation.
   scores by only a point or two. Filter on `pitches` for a stricter board.
 - **Stuff+ remembers pitchers.** It fits its training pitchers about seven times
   better than unseen ones, so it must only score seasons after its training
-  data; `score.py` warns otherwise. A returning pitcher's Stuff+ partly reflects
+  data; `pipeline/score.py` warns otherwise. A returning pitcher's Stuff+ partly reflects
   his past results. Use Stuff+ (no remembering) for a grade free of that, at a
   cost of about 0.037 in next-season correlation.
 - **The Stuff+ leaderboard and the saved Stuff+ model differ in training data.**

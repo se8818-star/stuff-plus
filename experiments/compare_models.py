@@ -3,20 +3,20 @@ Side-by-side 2026 comparison of feature set A and the six-variable comparison
 model (S6), both scored without remembering the pitcher (out-of-fold), from
 their leaderboards.
 
-    python compare_models.py    # leaderboards/comparison_2026.csv, reports/comparison_a_vs_s6.md
+    python -m experiments.compare_models    # leaderboards/comparison_2026.csv, reports/comparison_a_vs_s6.md
 """
 import json
 from pathlib import Path
 
 import pandas as pd
 
-from develop import table
+from pipeline.develop import table
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def main():
-    lb = HERE / "leaderboards"
+    lb = ROOT / "leaderboards"
     a, s = pd.read_csv(lb / "pitchers_2026_no_remembering.csv"), pd.read_csv(lb / "pitchers_2026_s6.csv")
     keep = ["pitcher", "rank", "stuff_plus", "grade"]
     c = a[["pitcher", "player_name", "p_throws", "role", "pitches", "velo", "rank", "stuff_plus", "grade"]].merge(
@@ -31,10 +31,10 @@ def main():
     by_type = t.groupby("pitch_type").apply(lambda g: pd.Series({
         "pairs": len(g), "r": g["stuff_plus_a"].corr(g["stuff_plus_s6"]),
         "mean_a": g["stuff_plus_a"].mean(), "mean_s6": g["stuff_plus_s6"].mean()}))
-    sa = json.loads((HERE / "results" / "final_summary.json").read_text())
+    sa = json.loads((ROOT / "results" / "final_summary.json").read_text())
     sa = {"shrinkage": sa["shrinkage"], "sp_rp": sa["models"]["Stuff+ (no remembering)"]["sp_rp"],
           "parks_2026": sa["models"]["Stuff+ (no remembering)"]["parks"]}
-    ss = json.loads((HERE / "results" / "final_summary_s6.json").read_text())
+    ss = json.loads((ROOT / "results" / "final_summary_s6.json").read_text())
     big = c[c["pitches"] >= 500]
     top = lambda n, col: set(big.nsmallest(n, col)["pitcher"])  # noqa: E731
     f = lambda d: [d["player_name"], d["role"], f"{d['pitches']:,}", f"{d['stuff_plus_a']:.1f}",  # noqa: E731
@@ -79,7 +79,7 @@ def main():
           "## Pitchers S6 likes less (≥500 pitches)", "",
           table(head, [f(d) for _, d in big.nsmallest(10, "stuff_plus_diff").iterrows()]), "",
           "Full table: `leaderboards/comparison_2026.csv`.", ""]
-    (HERE / "reports" / "comparison_a_vs_s6.md").write_text("\n".join(md))
+    (ROOT / "reports" / "comparison_a_vs_s6.md").write_text("\n".join(md))
     print("\n".join(md))
 
 

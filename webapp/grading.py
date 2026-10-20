@@ -19,8 +19,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from features import add_features
-from physics import Y50, Y_PLATE, _time_to_y
+from stuffplus.features import add_features
+from stuffplus.physics import Y50, Y_PLATE, _time_to_y
 
 G = 32.174           # ft/s^2
 MPH = 5280 / 3600    # ft/s per mph
@@ -36,7 +36,7 @@ def _movement_time(speed, ext, ay):
 
 def accel_to_movement(az, ax_arm, speed, ext, ay):
     """(az, mirrored ax) in ft/s^2 -> (IVB, arm-side HB) in inches.
-    `ax_arm` is features.py's mirrored ax, where negative = arm side."""
+    `ax_arm` is stuffplus/features.py's mirrored ax, where negative = arm side."""
     t2 = _movement_time(speed, ext, ay) ** 2
     ivb = 0.5 * (np.asarray(az) + G) * t2 * 12
     hb = -0.5 * np.asarray(ax_arm) * t2 * 12

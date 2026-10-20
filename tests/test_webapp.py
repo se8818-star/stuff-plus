@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import webapp  # noqa: F401  (repo root on sys.path)
+import webapp
 from webapp.build import build
 from webapp.grading import accel_to_movement, grade_arsenal, movement_to_accel
 
@@ -121,7 +121,7 @@ def test_fold_models_reproduce_final_oof():
     (same folds, rows, settings and seeds), so the website can reuse them."""
     from sklearn.model_selection import GroupKFold
     from lightgbm import LGBMRegressor
-    from models import CANDIDATES, SEEDS, _params, fit_predict
+    from stuffplus.models import CANDIDATES, SEEDS, _params, fit_predict
     from webapp.build import load_synthetic
     from webapp.folds import fit_folds, oof_predict
     from webapp.grading import AveragedModel
@@ -239,7 +239,7 @@ def test_folds_step_exits_early_for_v110_models(tmp_path, monkeypatch, kind):
     models, so the step stops before loading any data or fitting anything."""
     import json
 
-    import features
+    from stuffplus import features
     from webapp import folds
 
     meta = {"version": "1.1.0", "features": ["start_speed"], "target": "target", "train_years": [2022],
@@ -281,7 +281,7 @@ def v110_site(tmp_path_factory):
 
     from sklearn.model_selection import GroupKFold
 
-    import models as stuff_models
+    from stuffplus import models as stuff_models
     from webapp import build as wb
 
     root = tmp_path_factory.mktemp("site_root")
@@ -411,7 +411,7 @@ def test_published_season_keeps_unqualified_pitchers(v110_paths):
 def test_roles_use_pitches_with_missing_features(v110_paths, monkeypatch):
     """A pitch with a missing feature can't be scored, but it still counts for
     who started the game, as in final.roles."""
-    import final
+    from pipeline import final
     from webapp import build as wb
     site = v110_paths
     df = site["df"].copy()

@@ -1,5 +1,5 @@
 """
-The pre-registered candidates (PREREGISTRATION.md) and how each one turns
+The pre-registered candidates (docs/PREREGISTRATION.md) and how each one turns
 training pitches into expected run value (xRV) per pitch.
 
   direct     one LightGBM regression of the target on the features
@@ -9,7 +9,7 @@ training pitches into expected run value (xRV) per pitch.
 import numpy as np
 import pandas as pd
 
-from features import TJ_V3
+from stuffplus.features import TJ_V3
 
 TJ_PARAMS = dict(n_estimators=1000, learning_rate=0.01, num_leaves=31, max_depth=-1,
                  min_child_samples=20, subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1,
@@ -25,7 +25,7 @@ CANDIDATES = {
     "JGH": dict(kind="direct", features=JGH, target="target_x"),
     "COMP": dict(kind="component", features=JGH, target="target_x"),
 }
-# Added after stage 1 at the owner's request (PREREGISTRATION.md, Deviations):
+# Added after stage 1 at the owner's request (docs/PREREGISTRATION.md, Deviations):
 # a six-variable model on location-neutral approach angles.
 AMENDED = {
     "S6": dict(kind="direct", target="target",

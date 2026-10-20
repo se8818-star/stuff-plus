@@ -17,4 +17,4 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pytest -q
       # Smoke test on generated data only; CI never downloads Statcast.
-      - run: python run_ablation.py --synthetic --boot 200
+      - run: python -m stuffplus.run_ablation --synthetic --boot 200

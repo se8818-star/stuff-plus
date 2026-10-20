@@ -2,15 +2,15 @@
 import json
 from pathlib import Path
 
-import run_ablation as ra
-from develop import MIN_PITCHES, table
+from stuffplus import run_ablation as ra
+from pipeline.develop import MIN_PITCHES, table
 
-HERE = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 H = {"stickiness": "Stickiness", "next_woba": "Next wOBA", "next_k_bb": "Next K−BB%", "next_rv100": "Next RV/100"}
 
 
 def main():
-    R = json.loads((HERE / "results" / "confirmation.json").read_text())
+    R = json.loads((ROOT / "results" / "confirmation.json").read_text())
     res, vs, names = R["results"], R["vs_A"], list(R["results"])
     md = ["# Fold 2 confirmation", "",
           f"Train {R['train_years'][0]}–{R['train_years'][-1]}, score {R['eval_year']}, validate against "
@@ -52,7 +52,7 @@ def main():
                              for pt in ra.PITCH_TYPES])
     md += [table(["Model"] + ra.PITCH_TYPES, rows), "",
            "Library versions: " + ", ".join(f"{k} {v}" for k, v in R["env"].items() if v), ""]
-    (HERE / "reports" / "confirmation.md").write_text("\n".join(md))
+    (ROOT / "reports" / "confirmation.md").write_text("\n".join(md))
     print("wrote reports/confirmation.md")
 
 

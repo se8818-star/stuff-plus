@@ -1,0 +1,3 @@
+[tool.pytest.ini_options]
+# run from the repo root so stuffplus/, pipeline/, experiments/ and webapp/ import as packages
+pythonpath = ["."]
