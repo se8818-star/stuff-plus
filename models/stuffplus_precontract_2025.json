@@ -1,0 +1,129 @@
+{
+ "name": "Stuff+ (pre-contract 2025)",
+ "file": "models/stuffplus_precontract_2025.joblib (not in git)",
+ "feature_set": "A",
+ "features": [
+  "start_speed",
+  "spin_rate",
+  "extension",
+  "az",
+  "ax",
+  "x0",
+  "z0",
+  "speed_diff",
+  "az_diff",
+  "ax_diff"
+ ],
+ "target": "target",
+ "lightgbm_params": {
+  "n_estimators": 1000,
+  "learning_rate": 0.01,
+  "num_leaves": 31,
+  "max_depth": -1,
+  "min_child_samples": 20,
+  "subsample": 0.8,
+  "colsample_bytree": 0.8,
+  "reg_alpha": 0.1,
+  "reg_lambda": 0.2,
+  "force_row_wise": true,
+  "deterministic": true,
+  "verbose": -1
+ },
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "train_years": [
+  2022,
+  2023,
+  2024
+ ],
+ "scored_season": 2025,
+ "n_train": 2114948,
+ "scaling": {
+  "xrv_mean": -0.0007253838570399531,
+  "xrv_sd": 0.0061202735397225035,
+  "season": 2025,
+  "formula": "stuff_plus = 100 - 10 * (xRV - xrv_mean) / xrv_sd"
+ },
+ "shrinkage": {
+  "pitcher_k": {
+   "k": 12.9113783113108,
+   "r_half": 0.9482889190212354,
+   "harmonic_half_size": 236.77163095730046,
+   "groups": 2131
+  },
+  "formula": "league_mean + n / (n + k) * (raw_mean - league_mean)"
+ },
+ "outcome_columns_dropped_from_2025": [
+  "description",
+  "events",
+  "type",
+  "bb_type",
+  "zone",
+  "plate_x",
+  "plate_z",
+  "delta_run_exp",
+  "delta_pitcher_run_exp",
+  "woba_value",
+  "woba_denom",
+  "estimated_woba_using_speedangle",
+  "launch_speed",
+  "launch_angle",
+  "hit_distance_sc"
+ ],
+ "data": {
+  "2022": {
+   "file": "statcast_2022.parquet",
+   "sha256": "f997c0c4845b1ca81e3a6f4431779fddc33e78275639c28b81e831aa64aa07e2",
+   "rows": 710210,
+   "games": 2430,
+   "pitchers": 871,
+   "game_types": [
+    "R"
+   ]
+  },
+  "2023": {
+   "file": "statcast_2023.parquet",
+   "sha256": "e9595aa760e7bdcd449ec4ba7f5fc73549cb278a9b28648e63a4daa4b38bae60",
+   "rows": 720684,
+   "games": 2430,
+   "pitchers": 863,
+   "game_types": [
+    "R"
+   ]
+  },
+  "2024": {
+   "file": "statcast_2024.parquet",
+   "sha256": "d57c984e389518357d5d52eb73b8c07eaa8e81c11ab2e634904daf694342a7f3",
+   "rows": 711899,
+   "games": 2429,
+   "pitchers": 855,
+   "game_types": [
+    "R"
+   ]
+  },
+  "2025": {
+   "file": "statcast_2025.parquet",
+   "sha256": "999b6bea1357cb020901361beafe4c424b2b2d2ffd29531cac3779db6baea153",
+   "rows": 712528,
+   "games": 2430,
+   "pitchers": 873,
+   "game_types": [
+    "R"
+   ]
+  }
+ },
+ "env": {
+  "python": "3.9.25",
+  "platform": "Linux-6.18.44-fc-v445-x86_64-with-glibc2.39",
+  "numpy": "2.0.2",
+  "pandas": "2.3.3",
+  "scikit-learn": "1.6.1",
+  "lightgbm": "4.6.0",
+  "pyarrow": "21.0.0",
+  "pybaseball": "2.2.7",
+  "optuna": "5.0.0"
+ }
+}

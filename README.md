@@ -56,6 +56,7 @@ python -m pipeline.fetch_data 2020 2021 && python -m experiments.pitcher_holdout
 python -m experiments.crossfit_test     # reports/crossfit_test.md: what remembering is worth (exploratory)
 python -m experiments.tjstats_comparison.fetch   # then .build and .analyze: reports/tjstats_comparison.md (exploratory)
 python -m stuffplus.run_ablation --synthetic   # smoke test, no data needed
+python -m pipeline.precontract_2025 select && python -m pipeline.precontract_2025 final   # pre-contract 2025 Stuff+ (2022-24 only): docs/PRECONTRACT_2025_METHODOLOGY.md
 ```
 
 `stuffplus/run_ablation.py` is the original feature-set ablation harness (variants A–J,
