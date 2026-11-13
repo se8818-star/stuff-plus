@@ -197,7 +197,7 @@ def decide(res, vs):
             "baseline_score": res[BASE]["selection_score"], "difference": vs[ch]["score_diff"],
             "adjusted_interval": [lo, hi], "selected": ch if adopt else BASE,
             "reason": (f"{ch} beat A and its {100 * (1 - ALPHA):.2f}% interval excludes zero" if adopt else
-                       f"best challenger {ch}: {'interval includes zero' if lo <= 0 else 'not above A'}; A kept")}
+                       f"best challenger {ch}: {'not above A' if res[ch]['selection_score'] <= res[BASE]['selection_score'] else 'interval includes zero'}; A kept")}
 
 
 # --------------------------------------------------------------------- report
